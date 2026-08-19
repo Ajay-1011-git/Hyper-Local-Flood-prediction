@@ -13,6 +13,7 @@ rasterio==1.5.1
 requests==2.34.2
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-cov==7.1.0            # T1B.12 coverage audit
 mypy==2.3.1
 
 # Additional deps this module will need per §B.3 (not yet exercised by any

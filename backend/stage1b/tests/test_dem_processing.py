@@ -11,14 +11,18 @@ the whole tests/ directory regardless of filename).
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
 import rasterio
 from rasterio.transform import from_origin
+from sqlalchemy import delete
 
+from backend.stage1b.db import DemMetadataRow, get_db_session, init_models
 from backend.stage1b.dem.processing import (
     _utm_crs_for_lon_lat,
+    compute_and_persist_terrain_grids,
     compute_terrain_grids,
     write_terrain_grids_geotiff,
 )
@@ -151,4 +155,74 @@ def test_write_terrain_grids_geotiff_roundtrips(tmp_path):
         assert band1.shape == grids["elevation"].shape
         np.testing.assert_allclose(
             band1[~np.isnan(band1)], grids["elevation"][~np.isnan(grids["elevation"])]
+        )
+
+
+# ---------------------------------------------------------------------------
+# compute_and_persist_terrain_grids — the async DB-writing wrapper.
+# Flagged by T1B.12's coverage audit: the numeric core above was well
+# covered, but the persistence path (which T1B.9's route depends on to
+# find a terrain grid at all) had no test.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_compute_and_persist_updates_dem_metadata_row(tmp_path):
+    await init_models()
+    rng = np.random.default_rng(11)
+    elevation = 150.0 + rng.normal(scale=20.0, size=(20, 20)).astype("float32")
+    raster_path = tmp_path / "persist_me.tif"
+    _write_synthetic_dem(raster_path, elevation)
+
+    async with get_db_session() as session:
+        row = DemMetadataRow(
+            min_lat=12.8,
+            max_lat=13.05,
+            min_lon=79.05,
+            max_lon=79.25,
+            raster_path=str(raster_path),
+        )
+        session.add(row)
+        await session.commit()
+        row_id = row.id
+
+    try:
+        grids = await compute_and_persist_terrain_grids(
+            raster_path=str(raster_path),
+            grid_resolution_km=1.0,
+            dem_metadata_id=row_id,
+        )
+        assert grids["elevation"].size > 0
+
+        async with get_db_session() as session:
+            refreshed = await session.get(DemMetadataRow, row_id)
+            assert refreshed is not None
+            assert refreshed.grid_resolution_km == 1.0
+            assert refreshed.terrain_grid_path is not None
+            # The referenced GeoTIFF must actually exist on disk, not just
+            # be a recorded path (the whole point of the file-reference
+            # convention is that the file is really there).
+            assert Path(refreshed.terrain_grid_path).exists()
+            with rasterio.open(refreshed.terrain_grid_path) as src:
+                assert src.count == 3
+    finally:
+        async with get_db_session() as session:
+            await session.execute(
+                delete(DemMetadataRow).where(DemMetadataRow.id == row_id)
+            )
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_compute_and_persist_raises_for_unknown_dem_metadata_id(tmp_path):
+    await init_models()
+    elevation = np.full((10, 10), 120.0, dtype="float32")
+    raster_path = tmp_path / "orphan.tif"
+    _write_synthetic_dem(raster_path, elevation)
+
+    with pytest.raises(ValueError, match="No dem_metadata row"):
+        await compute_and_persist_terrain_grids(
+            raster_path=str(raster_path),
+            grid_resolution_km=1.0,
+            dem_metadata_id=999_999_999,  # deliberately nonexistent
         )

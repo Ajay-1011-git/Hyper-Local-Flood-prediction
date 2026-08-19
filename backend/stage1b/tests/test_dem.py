@@ -224,3 +224,74 @@ def test_fetch_dem_raster_raises_on_bad_zip(monkeypatch, _bbox, tmp_path):
     ):
         with pytest.raises(DemDownloadError):
             fetch_dem_raster(_bbox)
+
+
+def test_fetch_dem_raster_mosaics_multiple_adjacent_tiles(monkeypatch, tmp_path):
+    """The multi-tile mosaic path (rasterio.merge) — real logic that the
+    single-tile tests above never reach, flagged by T1B.12's coverage
+    audit. CartoDEM tiles are 1deg x 1deg, so any bbox spanning a degree
+    boundary hits this in production; the Vellore raster actually fetched
+    in T1B.2's live run was itself a 2-tile mosaic (7200x7200 from two
+    3600x3600 tiles), so this is the real production path, not a corner
+    case."""
+    monkeypatch.setattr(
+        "backend.stage1b.dem.client.settings.dem_raster_storage_dir", str(tmp_path)
+    )
+    # A bbox spanning the 79E/80E tile boundary, like the real fetch did.
+    bbox = BoundingBox(min_lat=12.9, max_lat=13.1, min_lon=79.5, max_lon=80.5)
+
+    tiles = [
+        # Two horizontally-adjacent 1-degree tiles, real distinct extents.
+        ("TILE_E079", 79.0, 13.0, 80.0, 14.0),
+        ("TILE_E080", 80.0, 13.0, 81.0, 14.0),
+    ]
+
+    def fake_post(url, **kwargs):
+        if url.endswith("/auth/token"):
+            return _FakeResponse(200, {"access_token": "fake-token"})
+        if url.endswith("/data/search"):
+            return _FakeResponse(
+                200,
+                {
+                    "features": [
+                        {
+                            "id": tile_id,
+                            "collection": "CartoSat-1_PAN_CartoDEM_30m",
+                            "properties": {"Online": "Y"},
+                        }
+                        for tile_id, *_ in tiles
+                    ]
+                },
+            )
+        raise AssertionError(f"unexpected POST {url}")
+
+    extents = {t[0]: t[1:] for t in tiles}
+
+    def fake_get(url, **kwargs):
+        tile_id = kwargs["params"]["id"]
+        min_lon, min_lat, max_lon, max_lat = extents[tile_id]
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(
+                f"{tile_id}/{tile_id}_DEM_30m.tif",
+                _make_fake_tif_bytes(
+                    min_lon=min_lon,
+                    min_lat=min_lat,
+                    max_lon=max_lon,
+                    max_lat=max_lat,
+                ),
+            )
+        return _FakeResponse(200, content=buf.getvalue())
+
+    with patch("backend.stage1b.dem.client.requests.post", side_effect=fake_post), patch(
+        "backend.stage1b.dem.client.requests.get", side_effect=fake_get
+    ):
+        path = fetch_dem_raster(bbox)
+
+    with rasterio.open(path) as src:
+        # The mosaic must actually span BOTH tiles, not silently return
+        # just one of them.
+        assert src.bounds.left == pytest.approx(79.0, abs=0.01)
+        assert src.bounds.right == pytest.approx(81.0, abs=0.01)
+        assert src.width > 4  # wider than a single 4px tile -> really merged
+        assert src.crs is not None
