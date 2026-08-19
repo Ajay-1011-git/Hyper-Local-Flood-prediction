@@ -1,6 +1,10 @@
 # STAGE 1A — Amendment 2: Source Priority Correction (GEFS primary / WeatherNext 2 secondary / GenCast last-resort)
 
+> **SUPERSEDED (2026-08-20) — the GenCast-as-tertiary-fallback decision below is incorrect and must not be built.** Confirmed directly with the project owner: GenCast has no available credentials, was removed outright (not deprioritised) in a prior session, and stays removed — including as a last-resort fallback. Do not restore `gencast/client.py`, `parser.py`, `devdata.py`, or wire `GenCastUnavailableError`/`load_precomputed_forecast` back into `get_regional_forecast()`. The GEFS-primary / WeatherNext-2-Mini-secondary part of this document is still correct and already reflects the live chain in `backend/stage1a/forecast/fallback.py` — only the third tier (GenCast) is wrong. If nothing is available from GEFS or WeatherNext 2 Mini, `get_regional_forecast()` raises `NoRegionalForecastAvailableError`; there is no third tier. See `backend/stage1a/CLAUDE.md`'s addendum for the authoritative current state.
+
 > **This is a correction against both the original `stage1a_build_instructions.md` and the prior `Amendment 1` document (`stage1a_amendment_wn2_mini.md`).** Neither of those documents states the real, current decision correctly, and one of them contains an actual factual error that will cause you to build the wrong thing if followed literally. Do not proceed on assumption — follow the operating contract's WORKING METHOD (§A): audit first, report back, then act. Treat this document, not the two above it, as the current source of truth for regional-forecast source priority. Once you've made the changes below, you are also required to edit the older documents/canonical files so this doesn't have to be re-explained in a future session — see STEP 3.
+>
+> **Everything below this point is preserved as historical record and is superseded on the GenCast point per the notice above.**
 
 ---
 

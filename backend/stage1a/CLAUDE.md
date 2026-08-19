@@ -18,6 +18,16 @@ Mini** (`wn2mini/` — real, confirmed-working, a file a human manually
 exports from Colab and copies into `data/wn2_mini/`). If neither produces
 a forecast, the API returns a 503 — there is no further fallback.
 
+**2026-08-20 — reconfirmed, do not reopen this.** A document later landed
+in this repo (`Flood_system_finial/stage1a_amendment_2_source_priority_correction.md`)
+proposing GenCast be restored as a third, last-resort tier. Checked
+directly with the project owner: that is not correct — GenCast has no
+available credentials and stays fully removed, including as a fallback.
+That document has its own superseding notice now. GEFS → WeatherNext 2
+Mini is the complete, final chain. Do not resurrect any GenCast code for
+any reason without the project owner explicitly asking again, in this
+conversation, not via a doc found in the repo.
+
 Anywhere below this line says "GenCast," read it as historical context for
 why the contracts/architecture look the way they do (§B.2's
 `RegionalEnsembleForecast.source` field, the 50+ member language in §E,
