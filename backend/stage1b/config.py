@@ -6,21 +6,39 @@ class attribute is the current (pydantic-settings v2) API; the old
 pydantic v1-style inner `class Config:` is not used here.
 """
 
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Resolve .env relative to this file, not the process's cwd — a bare ".env"
+# only loads when the process happens to be launched from
+# backend/stage1b/, which is not how tests/scripts here are actually run
+# (from the repo root). This fixes that regardless of invocation directory.
+_ENV_FILE = Path(__file__).resolve().parent / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # ---- Bhuvan / NRSC (DEM) ----
-    bhuvan_access_method: Optional[str] = None
+    # Confirmed in T1B.2 (see dem/client.py's module docstring for sources
+    # consulted): Bhuvan's legacy portal has no scriptable DEM download path
+    # (WMS/WMTS = map tiles only; the actual raster is behind a login-gated
+    # manual browser flow). The real, current, scriptable access path is
+    # NRSC's Bhoonidhi geoportal REST API (bhoonidhi-api.nrsc.gov.in).
+    bhuvan_access_method: str = "bhoonidhi_api"
     bhuvan_dem_product: str = "CartoDEM"
+    bhoonidhi_base_url: str = "https://bhoonidhi-api.nrsc.gov.in"
+    bhoonidhi_user_id: Optional[str] = None
+    bhoonidhi_password: Optional[str] = None
+    # Confirmed collection id for CartoDEM (from GET /data/collections);
+    # kept overridable in case NRSC renames/versions it.
+    bhoonidhi_dem_collection: str = "CartoSat-1_PAN_CartoDEM_30m"
 
     # ---- TN WRD (rainfall calibration) ----
     tnwrd_dataset_url: str = (
