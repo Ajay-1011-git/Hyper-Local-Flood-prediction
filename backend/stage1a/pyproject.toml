@@ -7,10 +7,17 @@
 pythonpath = [".."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# One event loop for the whole run: db.py holds a process-wide async engine
+# and Redis client, and a per-test loop would leave them bound to a closed
+# loop between tests.
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"
 
 [tool.mypy]
+# Canonical invocation (run from `backend/`, so `stage1a` is the package root
+# and every module resolves under exactly one name):
+#   mypy --config-file stage1a/pyproject.toml stage1a
 python_version = "3.13"
-mypy_path = ".."
 explicit_package_bases = true
 namespace_packages = true
 disallow_untyped_defs = true

@@ -15,6 +15,9 @@ pydantic-settings==2.15.0
 # asyncpg chosen over psycopg2 because TRD §3.2 mandates a non-blocking
 # event loop; SQLAlchemy 2.x's async engine requires an async DBAPI driver.
 sqlalchemy==2.0.52
+# Required by SQLAlchemy's async engine (its greenlet bridge); not pulled in
+# automatically on CPython 3.13, confirmed by an ImportError at runtime.
+greenlet==3.5.5
 asyncpg==0.31.0
 geoalchemy2==0.20.0
 
