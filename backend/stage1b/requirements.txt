@@ -1,0 +1,16 @@
+# Versions pinned to latest stable on PyPI as of 2026-08-19 (verified via
+# `pip index versions <pkg>` in-session per T1B.0's anti-hallucination rule).
+fastapi==0.141.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+sqlalchemy==2.0.52
+rasterio==1.5.1
+requests==2.34.2
+pytest==9.1.1
+
+# Additional deps this module will need per §B.3 (not yet exercised by any
+# task, pinned now so `pip install` is reproducible from T1B.0 onward):
+psycopg2-binary==2.9.12   # PostgreSQL driver for SQLAlchemy
+redis==8.1.0              # Redis client
+numpy==2.5.2               # terrain grid math (T1B.3)
+pandas==3.0.5               # TN WRD CSV parsing (T1B.4)
