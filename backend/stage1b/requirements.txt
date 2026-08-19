@@ -7,10 +7,18 @@ sqlalchemy==2.0.52
 rasterio==1.5.1
 requests==2.34.2
 pytest==9.1.1
+pytest-asyncio==1.4.0
+mypy==2.3.1
 
 # Additional deps this module will need per §B.3 (not yet exercised by any
 # task, pinned now so `pip install` is reproducible from T1B.0 onward):
-psycopg2-binary==2.9.12   # PostgreSQL driver for SQLAlchemy
-redis==8.1.0              # Redis client
-numpy==2.5.2               # terrain grid math (T1B.3)
-pandas==3.0.5               # TN WRD CSV parsing (T1B.4)
+redis==8.1.0               # Redis client
+numpy==2.5.2                # terrain grid math (T1B.3)
+pandas==3.0.5                # TN WRD CSV parsing (T1B.4)
+
+# T1B.1 — DB layer. asyncpg chosen over psycopg2 per CLAUDE.md's fixed
+# "FastAPI (async)" stack requirement: SQLAlchemy's async engine needs an
+# async-capable driver, which psycopg2 is not.
+asyncpg==0.31.0             # async PostgreSQL driver for SQLAlchemy
+geoalchemy2==0.20.0          # PostGIS geometry column support for SQLAlchemy
+greenlet==3.5.5              # required by SQLAlchemy's async engine (greenlet_spawn)
