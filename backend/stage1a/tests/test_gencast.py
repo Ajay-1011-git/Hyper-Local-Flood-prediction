@@ -193,7 +193,20 @@ def test_non_finite_values_are_rejected() -> None:
 
 
 def _settings_with_dir(directory: object) -> Stage1ASettings:
-    return _settings(gencast_precomputed_fallback_dir=directory)
+    """Settings isolating the legacy GenCast pair from the chain amendment.
+
+    These T1A.4 tests target `load_precomputed_forecast`/`load_precomputed_result`/
+    `get_regional_forecast`'s original live-inference/synthetic-fallback pair
+    directly, not the full GEFS -> WN2 Mini -> legacy chain added later
+    (tests/test_wn2mini.py covers that chain). wn2_mini_forecast_path is
+    pointed at a location that cannot exist, so `get_regional_forecast`
+    reaches the legacy pair exactly as these tests expect, regardless of
+    whether a real WN2 export happens to be present on this machine.
+    """
+    return _settings(
+        gencast_precomputed_fallback_dir=directory,
+        wn2_mini_forecast_path="/nonexistent/stage1a-test-isolation/no_wn2_file.nc",
+    )
 
 
 def test_fallback_raises_when_no_precomputed_file_exists(tmp_path: object) -> None:

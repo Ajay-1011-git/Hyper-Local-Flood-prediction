@@ -17,10 +17,18 @@ from pydantic import BaseModel
 
 
 class ForecastPath(str, Enum):
-    """Which acquisition path produced a forecast."""
+    """Which acquisition path produced a forecast.
 
-    LIVE = "live_inference"
-    FALLBACK = "precomputed_fallback"
+    Ordered as `get_regional_forecast`'s chain tries them (amendment,
+    2026-08-19): GEFS first (not yet implemented), then WeatherNext 2 Mini,
+    then the legacy GenCast live-inference/synthetic-fallback path kept as
+    the last resort.
+    """
+
+    GEFS = "gefs"
+    WN2_MINI = "wn2_mini_precomputed"
+    LIVE = "live_inference"  # legacy GenCast path
+    FALLBACK = "precomputed_fallback"  # legacy GenCast synthetic fallback
 
 
 class ForecastProvenance(BaseModel):

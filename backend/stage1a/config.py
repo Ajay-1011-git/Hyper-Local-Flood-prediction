@@ -33,6 +33,14 @@ class Stage1ASettings(BaseSettings):
     gencast_tpu_endpoint: Optional[str] = None
     gencast_precomputed_fallback_dir: Path = MODULE_ROOT / "data" / "gencast_precomputed"
 
+    # ---- WeatherNext 2 Cyclones Mini (T1A.2 amendment) ----
+    # Path to the .nc file exported by manually running wn2_demo.ipynb in
+    # Colab and copying the result here (TRD §3.6 local-first: no live sync
+    # dependency for demo day). Not produced by this backend.
+    wn2_mini_forecast_path: Path = (
+        MODULE_ROOT / "data" / "wn2_mini" / "tn_flood_forecast.nc"
+    )
+
     # ---- CWC / India-WRIS (river & reservoir stage forecast) ----
     # Left as None by default on purpose: T1A.6 must confirm the real base
     # URLs against live documentation before anything is hardcoded here.
@@ -47,7 +55,9 @@ class Stage1ASettings(BaseSettings):
     target_site_lat: Optional[float] = None
     target_site_lon: Optional[float] = None
 
-    @field_validator("gencast_precomputed_fallback_dir", mode="after")
+    @field_validator(
+        "gencast_precomputed_fallback_dir", "wn2_mini_forecast_path", mode="after"
+    )
     @classmethod
     def _anchor_to_module_root(cls, value: Path) -> Path:
         """Resolve a relative fallback dir against the module root, not the CWD.

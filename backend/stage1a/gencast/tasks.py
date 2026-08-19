@@ -1,4 +1,18 @@
-"""GenCast Celery task and persistence (T1A.5).
+"""Regional-forecast Celery task and persistence (T1A.5).
+
+AMENDMENT NOTE (2026-08-19): this task's body is unchanged — it already
+delegated to `get_regional_forecast`, which now runs the full GEFS -> WN2
+Mini -> legacy GenCast chain (see `gencast/fallback.py`). No edit was needed
+here for the chain amendment itself.
+
+What HAS changed in practice: with WeatherNext 2 Mini as the working real
+path, this task is typically now a file-existence check plus a fast parse
+of a small (tens-of-MB) NetCDF file, not the "protect the API from a
+TPU-scale computation" job it was justified as when GenCast live inference
+was the intended primary path. It stays on Celery for consistency with the
+rest of the pipeline and because persistence still shouldn't block a
+request handler, but the original heavy-compute justification is weaker
+now than when T1A.5 was first written.
 
 Runs forecast acquisition out-of-band rather than inline in a request
 handler (TRD §3.2), then persists the result to PostgreSQL and caches it in
