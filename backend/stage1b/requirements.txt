@@ -22,3 +22,7 @@ pandas==3.0.5                # TN WRD CSV parsing (T1B.4)
 asyncpg==0.31.0             # async PostgreSQL driver for SQLAlchemy
 geoalchemy2==0.20.0          # PostGIS geometry column support for SQLAlchemy
 greenlet==3.5.5              # required by SQLAlchemy's async engine (greenlet_spawn)
+
+# T1B.4 — pandas ships no type stubs of its own; pandas-stubs is the real,
+# current package for it (not py.typed).
+pandas-stubs==3.0.5.260730
