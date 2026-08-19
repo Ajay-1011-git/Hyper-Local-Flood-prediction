@@ -187,3 +187,118 @@ def test_non_finite_values_are_rejected() -> None:
     dataset["total_precipitation_12hr"].values[:] = np.nan
     with pytest.raises(GenCastParseError):
         parse_gencast_output(dataset, VELLORE_BBOX, FORECAST_START)
+
+
+# ------------------------------------------------------------------- T1A.4
+
+
+def _settings_with_dir(directory: object) -> Stage1ASettings:
+    return _settings(gencast_precomputed_fallback_dir=directory)
+
+
+def test_fallback_raises_when_no_precomputed_file_exists(tmp_path: object) -> None:
+    from stage1a.gencast.errors import NoFallbackAvailableError
+    from stage1a.gencast.fallback import load_precomputed_forecast
+
+    with pytest.raises(NoFallbackAvailableError):
+        load_precomputed_forecast(
+            VELLORE_BBOX, FORECAST_START, _settings_with_dir(tmp_path)
+        )
+
+
+def test_get_regional_forecast_falls_back_and_marks_the_path(tmp_path: object) -> None:
+    from stage1a.gencast.devdata import write_placeholder
+    from stage1a.gencast.fallback import get_regional_forecast
+    from stage1a.gencast.provenance import ForecastPath
+
+    write_placeholder(VELLORE_BBOX, FORECAST_START, num_members=4, directory=tmp_path)  # type: ignore[arg-type]
+
+    result = get_regional_forecast(
+        VELLORE_BBOX, FORECAST_START, _settings_with_dir(tmp_path)
+    )
+    assert result.provenance.path is ForecastPath.FALLBACK
+    assert result.provenance.fallback_reason
+    assert len(result.forecast.members) == 4
+
+
+def test_placeholder_data_is_reported_as_synthetic(tmp_path: object) -> None:
+    """A placeholder must never look like real model output downstream."""
+    from stage1a.gencast.devdata import write_placeholder
+    from stage1a.gencast.fallback import get_regional_forecast
+
+    write_placeholder(VELLORE_BBOX, FORECAST_START, num_members=2, directory=tmp_path)  # type: ignore[arg-type]
+    result = get_regional_forecast(
+        VELLORE_BBOX, FORECAST_START, _settings_with_dir(tmp_path)
+    )
+    assert result.provenance.synthetic is True
+
+
+def test_real_forecast_without_synthetic_stamp_is_not_flagged(tmp_path: object) -> None:
+    """Dropping in genuine GenCast output flips `synthetic` to false, no code change."""
+    from pathlib import Path
+
+    from stage1a.gencast.fallback import get_regional_forecast
+    from stage1a.gencast.parser import build_forecast_id
+    from stage1a.tests.fixtures import synthetic_gencast_dataset
+
+    dataset = synthetic_gencast_dataset(num_members=2)
+    del dataset.attrs["synthetic"]  # as a real Colab-produced file would be
+    path = Path(str(tmp_path)) / f"{build_forecast_id(VELLORE_BBOX, FORECAST_START)}.nc"
+    dataset.to_netcdf(path, engine="h5netcdf")
+
+    result = get_regional_forecast(
+        VELLORE_BBOX, FORECAST_START, _settings_with_dir(tmp_path)
+    )
+    assert result.provenance.synthetic is False
+
+
+def test_fallback_matches_by_attributes_when_filename_differs(tmp_path: object) -> None:
+    from pathlib import Path
+
+    from stage1a.gencast.fallback import load_precomputed_forecast
+    from stage1a.tests.fixtures import synthetic_gencast_dataset
+
+    path = Path(str(tmp_path)) / "some-other-name.nc"
+    synthetic_gencast_dataset(num_members=2).to_netcdf(path, engine="h5netcdf")
+
+    forecast = load_precomputed_forecast(
+        VELLORE_BBOX, FORECAST_START, _settings_with_dir(tmp_path)
+    )
+    assert len(forecast.members) == 2
+
+
+def test_wrong_window_is_not_silently_substituted(tmp_path: object) -> None:
+    """A file for a different window must not be served for this one."""
+    from datetime import timedelta
+
+    from stage1a.gencast.devdata import write_placeholder
+    from stage1a.gencast.errors import NoFallbackAvailableError
+    from stage1a.gencast.fallback import load_precomputed_forecast
+
+    write_placeholder(VELLORE_BBOX, FORECAST_START, num_members=2, directory=tmp_path)  # type: ignore[arg-type]
+
+    with pytest.raises(NoFallbackAvailableError):
+        load_precomputed_forecast(
+            VELLORE_BBOX,
+            FORECAST_START + timedelta(days=3),
+            _settings_with_dir(tmp_path),
+        )
+
+
+def test_parse_errors_are_not_masked_by_the_fallback(tmp_path: object) -> None:
+    """Only GenCastUnavailableError triggers fallback; a bad file must surface."""
+    from pathlib import Path
+
+    from stage1a.gencast.errors import GenCastParseError
+    from stage1a.gencast.fallback import get_regional_forecast
+    from stage1a.gencast.parser import build_forecast_id
+    from stage1a.tests.fixtures import synthetic_gencast_dataset
+
+    dataset = synthetic_gencast_dataset(num_members=2, units=None)
+    path = Path(str(tmp_path)) / f"{build_forecast_id(VELLORE_BBOX, FORECAST_START)}.nc"
+    dataset.to_netcdf(path, engine="h5netcdf")
+
+    with pytest.raises(GenCastParseError):
+        get_regional_forecast(
+            VELLORE_BBOX, FORECAST_START, _settings_with_dir(tmp_path)
+        )
