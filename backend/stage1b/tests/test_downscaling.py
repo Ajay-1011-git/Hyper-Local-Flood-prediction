@@ -1,4 +1,4 @@
-"""Tests for T1B.6 — calibration fitting.
+"""Tests for T1B.6 (calibration fitting) and T1B.7 (downscaling model core).
 
 The real single-station VERIFY run (T1B.4/T1B.5's actual "Vellore" TN WRD
 station, 1167 real historical readings, paired with a clearly-labeled
@@ -23,6 +23,7 @@ from backend.stage1b.downscaling.calibration import (
     MIN_CALIBRATION_SAMPLES,
     fit_calibration,
 )
+from backend.stage1b.downscaling.model import downscale_rainfall
 
 
 def _synthetic_multi_station_fixture(n=200, seed=1, true_elev_factor=0.2):
@@ -107,3 +108,71 @@ def test_fit_calibration_recovers_known_elevation_factor_from_multi_station_data
     assert abs(result["slope_factor_per_45deg"]) < 0.1
     assert abs(result["aspect_cos_factor"]) < 0.1
     assert abs(result["aspect_sin_factor"]) < 0.1
+
+
+# ---------------------------------------------------------------------------
+# T1B.7 — downscale_rainfall
+# ---------------------------------------------------------------------------
+
+_FIXED_COEFFS = {
+    "elevation_factor_per_1000m": 0.2,
+    "slope_factor_per_45deg": 0.05,
+    "aspect_cos_factor": -0.02,
+    "aspect_sin_factor": 0.03,
+    "intercept_mm": 0.3,
+    "reference_elevation_m": 300.0,
+}
+
+
+def test_downscale_rainfall_is_deterministic():
+    r1 = downscale_rainfall(12.5, 450.0, 8.0, 120.0, _FIXED_COEFFS)
+    r2 = downscale_rainfall(12.5, 450.0, 8.0, 120.0, _FIXED_COEFFS)
+    assert r1 == r2  # exact equality, not approx — same inputs, same float ops
+
+
+def test_downscale_rainfall_matches_hand_computed_value():
+    # coarse=12.5, elevation=450 (300 above reference), slope=8deg, aspect=120deg
+    import math
+
+    coarse = 12.5
+    expected_factor = (
+        1.0
+        + 0.2 * (450.0 - 300.0) / 1000.0
+        + 0.05 * 8.0 / 45.0
+        + (-0.02) * math.cos(math.radians(120.0))
+        + 0.03 * math.sin(math.radians(120.0))
+    )
+    expected = coarse * expected_factor + 0.3
+    result = downscale_rainfall(coarse, 450.0, 8.0, 120.0, _FIXED_COEFFS)
+    assert result == pytest.approx(expected)
+
+
+def test_downscale_rainfall_is_passthrough_under_identity_coefficients():
+    result = downscale_rainfall(12.5, 450.0, 8.0, 120.0, IDENTITY_COEFFICIENTS)
+    assert result == 12.5
+
+
+def test_downscale_rainfall_clamps_negative_result_to_zero():
+    coeffs = dict(_FIXED_COEFFS)
+    coeffs["intercept_mm"] = -1000.0  # forces a physically-impossible negative result
+    result = downscale_rainfall(12.5, 450.0, 8.0, 120.0, coeffs)
+    assert result == 0.0
+
+
+def test_downscale_rainfall_never_negative_across_random_inputs():
+    rng = np.random.default_rng(3)
+    for _ in range(200):
+        coarse = rng.uniform(0, 50)
+        elevation = rng.uniform(-50, 2000)
+        slope = rng.uniform(0, 45)
+        aspect = rng.uniform(0, 360)
+        coeffs = {
+            "elevation_factor_per_1000m": rng.uniform(-1, 1),
+            "slope_factor_per_45deg": rng.uniform(-1, 1),
+            "aspect_cos_factor": rng.uniform(-1, 1),
+            "aspect_sin_factor": rng.uniform(-1, 1),
+            "intercept_mm": rng.uniform(-20, 20),
+            "reference_elevation_m": rng.uniform(0, 500),
+        }
+        result = downscale_rainfall(coarse, elevation, slope, aspect, coeffs)
+        assert result >= 0.0
