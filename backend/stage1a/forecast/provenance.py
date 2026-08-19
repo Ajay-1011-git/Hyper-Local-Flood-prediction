@@ -1,4 +1,4 @@
-"""Provenance of a regional forecast (T1A.4).
+"""Provenance of a regional forecast.
 
 §B.2's `RegionalEnsembleForecast` must stay byte-aligned with Stage 1B's
 copy, so "which path produced this?" cannot become a field on it. It lives
@@ -19,16 +19,15 @@ from pydantic import BaseModel
 class ForecastPath(str, Enum):
     """Which acquisition path produced a forecast.
 
-    Ordered as `get_regional_forecast`'s chain tries them (amendment,
-    2026-08-19): GEFS first (not yet implemented), then WeatherNext 2 Mini,
-    then the legacy GenCast live-inference/synthetic-fallback path kept as
-    the last resort.
+    Ordered as `get_regional_forecast`'s chain tries them (see
+    `fallback.py`): GEFS first (not yet implemented), then WeatherNext 2
+    Mini. There is no further fallback — the legacy GenCast live-inference
+    path was removed (no TPU/JAX credentials available for it, ever; see
+    `fallback.py`'s module docstring).
     """
 
     GEFS = "gefs"
     WN2_MINI = "wn2_mini_precomputed"
-    LIVE = "live_inference"  # legacy GenCast path
-    FALLBACK = "precomputed_fallback"  # legacy GenCast synthetic fallback
 
 
 class ForecastProvenance(BaseModel):
@@ -37,11 +36,11 @@ class ForecastProvenance(BaseModel):
     path: ForecastPath
     retrieved_at: datetime
     source_file: Optional[str] = None
-    #: True when the underlying dataset is stamped `synthetic` — a
-    #: development fixture, not a real GenCast forecast. Surfaced so a
-    #: placeholder can never be mistaken for model output downstream.
+    #: True when the underlying dataset is a development fixture, not a
+    #: real model forecast. Surfaced so a placeholder can never be mistaken
+    #: for real output downstream.
     synthetic: bool = False
-    #: Why the fallback was taken, when it was.
+    #: Why the previous source(s) in the chain were skipped, if any.
     fallback_reason: Optional[str] = None
 
 

@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 
 from stage1a import routes
 from stage1a.cwc.errors import CWCUnavailableError
-from stage1a.gencast.errors import GenCastUnavailableError
-from stage1a.gencast.parser import build_forecast_id
-from stage1a.gencast.provenance import ForecastPath, ForecastProvenance, RegionalForecastResult
+from stage1a.forecast.errors import NoRegionalForecastAvailableError
+from stage1a.forecast.provenance import ForecastPath, ForecastProvenance, RegionalForecastResult
+from stage1a.wn2mini.parser import build_forecast_id
 from stage1a.shared.contracts import (
     BoundingBox,
     EnsembleMember,
@@ -159,7 +159,7 @@ def test_regional_route_returns_503_when_nothing_is_available(
     async def fake_generate_and_persist(
         bbox: BoundingBox, forecast_start: datetime
     ) -> RegionalForecastResult:
-        raise GenCastUnavailableError("nothing available")
+        raise NoRegionalForecastAvailableError("nothing available")
 
     monkeypatch.setattr(routes, "read_latest_forecast_id", fake_read_latest_forecast_id)
     monkeypatch.setattr(routes, "generate_and_persist", fake_generate_and_persist)

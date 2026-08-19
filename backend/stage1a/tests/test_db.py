@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import text
+
+if TYPE_CHECKING:
+    import xarray as xr
 
 from stage1a.db import (
     Stage1ADatabaseError,
@@ -173,6 +177,36 @@ async def test_upsert_river_stage_forecast_is_idempotent_and_geocoded() -> None:
     assert wkt == f"POINT({forecast.lon} {forecast.lat})"
 
 
+def _wn2_shaped_dataset(num_members: int = 8) -> "xr.Dataset":
+    """A dataset matching the confirmed real WeatherNext 2 Mini structure.
+
+    Duplicated (deliberately small) from tests/test_wn2mini.py's builder
+    rather than shared, to keep this test independent of that module.
+    """
+    import numpy as np
+    import xarray as xr
+
+    lead_hours = tuple(range(6, 121, 6))
+    lats = np.arange(12.5, 13.5, 0.25)
+    lons = np.arange(78.8, 79.6, 0.25)
+    shape = (num_members, len(lead_hours), 1, len(lats), len(lons))
+    rng = np.random.default_rng(7)
+    values = rng.gamma(1.5, 0.004, size=shape).astype(np.float32)
+    precip = xr.DataArray(
+        values,
+        dims=["sample", "time", "batch", "lat", "lon"],
+        coords={
+            "sample": np.arange(num_members),
+            "time": np.array(
+                [np.timedelta64(h, "h") for h in lead_hours], dtype="timedelta64[ns]"
+            ),
+            "lat": lats.astype(np.float32),
+            "lon": lons.astype(np.float32),
+        },
+    )
+    return xr.Dataset({"total_precipitation_6hr": precip})
+
+
 @requires_postgres
 @requires_redis
 @pytest.mark.asyncio
@@ -181,16 +215,16 @@ async def test_repeated_task_runs_leave_exactly_one_row(tmp_path: object) -> Non
     from pathlib import Path
 
     from stage1a.config import Stage1ASettings
-    from stage1a.gencast.devdata import write_placeholder
-    from stage1a.gencast.parser import build_forecast_id
-    from stage1a.gencast.tasks import generate_and_persist
+    from stage1a.forecast.tasks import generate_and_persist
     from stage1a.shared.contracts import BoundingBox
+    from stage1a.wn2mini.parser import build_forecast_id
 
     bbox = BoundingBox(min_lat=12.5, max_lat=13.3, min_lon=78.8, max_lon=79.5)
     start = datetime(2026, 9, 1, tzinfo=timezone.utc)
-    write_placeholder(bbox, start, num_members=3, directory=Path(str(tmp_path)))
 
-    settings = Stage1ASettings(gencast_precomputed_fallback_dir=Path(str(tmp_path)))
+    wn2_path = Path(str(tmp_path)) / "tn_flood_forecast.nc"
+    _wn2_shaped_dataset(num_members=8).to_netcdf(wn2_path, engine="h5netcdf")
+    settings = Stage1ASettings(wn2_mini_forecast_path=wn2_path)
 
     await init_db()
     for _ in range(3):

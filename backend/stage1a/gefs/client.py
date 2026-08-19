@@ -17,7 +17,7 @@ from typing import Optional
 
 from stage1a.config import Stage1ASettings
 from stage1a.gefs.errors import GEFSUnavailableError
-from stage1a.gencast.provenance import RegionalForecastResult
+from stage1a.forecast.provenance import RegionalForecastResult
 from stage1a.shared.contracts import BoundingBox
 
 

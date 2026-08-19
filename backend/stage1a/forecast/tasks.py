@@ -1,18 +1,16 @@
 """Regional-forecast Celery task and persistence (T1A.5).
 
-AMENDMENT NOTE (2026-08-19): this task's body is unchanged — it already
-delegated to `get_regional_forecast`, which now runs the full GEFS -> WN2
-Mini -> legacy GenCast chain (see `gencast/fallback.py`). No edit was needed
-here for the chain amendment itself.
+This task delegates to `forecast.fallback.get_regional_forecast`, which
+runs the GEFS -> WeatherNext 2 Mini chain (see that module's docstring —
+the legacy GenCast live-inference path was removed outright, no
+credentials for it were ever available).
 
-What HAS changed in practice: with WeatherNext 2 Mini as the working real
-path, this task is typically now a file-existence check plus a fast parse
-of a small (tens-of-MB) NetCDF file, not the "protect the API from a
-TPU-scale computation" job it was justified as when GenCast live inference
-was the intended primary path. It stays on Celery for consistency with the
-rest of the pipeline and because persistence still shouldn't block a
-request handler, but the original heavy-compute justification is weaker
-now than when T1A.5 was first written.
+With WeatherNext 2 Mini as the working real path, this task is typically
+now a file-existence check plus a fast parse of a small (tens-of-MB) NetCDF
+file, not the "protect the API from a TPU-scale computation" job it was
+originally justified as. It stays on Celery for consistency with the rest
+of the pipeline and because persistence still shouldn't block a request
+handler, but the original heavy-compute justification no longer applies.
 
 Runs forecast acquisition out-of-band rather than inline in a request
 handler (TRD §3.2), then persists the result to PostgreSQL and caches it in
@@ -42,9 +40,9 @@ from stage1a.db import (
     get_redis_client,
     upsert_regional_forecast,
 )
-from stage1a.gencast.fallback import get_regional_forecast
-from stage1a.gencast.parser import FORECAST_HORIZON_HOURS
-from stage1a.gencast.provenance import ForecastProvenance, RegionalForecastResult
+from stage1a.forecast.fallback import get_regional_forecast
+from stage1a.forecast.provenance import ForecastProvenance, RegionalForecastResult
+from stage1a.wn2mini.parser import FORECAST_HORIZON_HOURS
 from stage1a.shared.contracts import BoundingBox, RegionalEnsembleForecast
 
 logger = logging.getLogger(__name__)

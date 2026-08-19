@@ -1,3 +1,31 @@
+# ADDENDUM — READ THIS FIRST (2026-08-19)
+
+The body below is the ORIGINAL operating contract, kept verbatim as
+historical record per the build doc's own instruction. It is now **out of
+date on one point: GenCast.**
+
+**GenCast has been removed entirely.** The human running this project has
+no TPU/JAX access or GenCast credentials, and never will for this build.
+The `gencast/` module (client, parser, fallback, devdata) was deleted
+outright — not deprioritised, not kept as a dead fallback. The directory
+that used to be `gencast/` is now `forecast/`, holding only the
+model-agnostic orchestration (source chain, Celery task, persistence,
+provenance) that survives regardless of which model is behind it.
+
+**Current regional forecast source chain**: GEFS (`gefs/` — an honest
+stub, not yet implemented, always raises) → **WeatherNext 2 Cyclones
+Mini** (`wn2mini/` — real, confirmed-working, a file a human manually
+exports from Colab and copies into `data/wn2_mini/`). If neither produces
+a forecast, the API returns a 503 — there is no further fallback.
+
+Anywhere below this line says "GenCast," read it as historical context for
+why the contracts/architecture look the way they do (§B.2's
+`RegionalEnsembleForecast.source` field, the 50+ member language in §E,
+etc.) — not as a live requirement. Do not resurrect GenCast-calling code
+without the human explicitly asking for it again.
+
+---
+
 # STAGE 1A — Claude Code Operating Contract (READ EVERY SESSION)
 
 ## What Stage 1A is

@@ -29,12 +29,7 @@ class Stage1ASettings(BaseSettings):
     rather than validating as an empty string.
     """
 
-    # ---- GenCast (regional ensemble weather forecast) ----
-    gencast_weights_path: Optional[str] = None
-    gencast_tpu_endpoint: Optional[str] = None
-    gencast_precomputed_fallback_dir: Path = MODULE_ROOT / "data" / "gencast_precomputed"
-
-    # ---- WeatherNext 2 Cyclones Mini (T1A.2 amendment) ----
+    # ---- WeatherNext 2 Cyclones Mini (regional ensemble weather forecast) ----
     # Path to the .nc file exported by manually running wn2_demo.ipynb in
     # Colab and copying the result here (TRD §3.6 local-first: no live sync
     # dependency for demo day). Not produced by this backend.
@@ -77,9 +72,10 @@ class Stage1ASettings(BaseSettings):
         included. `env_ignore_empty` only catches a TRULY empty string, so
         every such field silently held its own comment as a "value" instead
         of falling through to this class's real default — e.g.
-        `gencast_weights_path` held `'# path or URL to published GenCast
-        weights'`, which is truthy, so `client.check_gencast_available`
-        would NOT have flagged weights as missing.
+        `cwc_data_portal_base_url` held the literal string
+        `'# confirm exact base URL in T1A.6 before hardcoding'` instead of
+        this class's real default, which would have broken every request
+        the CWC client made.
 
         Handles both shapes a blank §B.1 field produces: the whole value IS
         the comment (`dotenv` already strips the leading whitespace before
@@ -108,14 +104,12 @@ class Stage1ASettings(BaseSettings):
                 cleaned[key] = value
         return cleaned
 
-    @field_validator(
-        "gencast_precomputed_fallback_dir", "wn2_mini_forecast_path", mode="after"
-    )
+    @field_validator("wn2_mini_forecast_path", mode="after")
     @classmethod
     def _anchor_to_module_root(cls, value: Path) -> Path:
-        """Resolve a relative fallback dir against the module root, not the CWD.
+        """Resolve a relative forecast path against the module root, not the CWD.
 
-        `.env.example` ships `./data/gencast_precomputed` (verbatim §B.1), which
+        `.env.example` ships `./data/wn2_mini/tn_flood_forecast.nc`, which
         would otherwise point somewhere different for every process depending on
         where it was launched from — the API server, a Celery worker, and pytest
         all have different working directories.

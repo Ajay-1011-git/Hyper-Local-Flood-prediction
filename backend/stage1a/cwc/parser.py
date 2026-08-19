@@ -14,7 +14,7 @@ increasingly negative for older ones. `forecast_horizon_hours=0` — nothing
 is projected forward. This keeps architecture doc §2.2's actual stated role
 for CWC in this system: "an independent hydrological cross-check... does
 that [rainfall] translate into an actual river or reservoir threshold
-breach" — i.e. downstream code should compare GenCast/WN2's rainfall
+breach" — i.e. downstream code should compare the regional rainfall forecast
 against whether the river is ALREADY rising, not against a CWC-predicted
 future level that does not exist in this open data source.
 

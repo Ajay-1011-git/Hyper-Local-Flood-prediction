@@ -164,13 +164,10 @@ def test_negative_near_zero_rainfall_is_clamped_not_rejected() -> None:
     )
 
 
-def test_forecast_id_is_namespaced_separately_from_gencast() -> None:
-    from stage1a.gencast.parser import build_forecast_id as gencast_id
+def test_forecast_id_is_namespaced() -> None:
     from stage1a.wn2mini.parser import build_forecast_id as wn2_id
 
     assert wn2_id(TN_BBOX, FORECAST_START).startswith("wn2mini-")
-    assert gencast_id(TN_BBOX, FORECAST_START).startswith("gencast-")
-    assert wn2_id(TN_BBOX, FORECAST_START) != gencast_id(TN_BBOX, FORECAST_START)
 
 
 # -------------------------------------------------------------- gefs stub
@@ -193,8 +190,8 @@ def _settings_with_wn2_path(path: object) -> Stage1ASettings:
 
 @requires_real_wn2_file
 def test_chain_serves_wn2_mini_when_present() -> None:
-    from stage1a.gencast.fallback import get_regional_forecast
-    from stage1a.gencast.provenance import ForecastPath
+    from stage1a.forecast.fallback import get_regional_forecast
+    from stage1a.forecast.provenance import ForecastPath
 
     result = get_regional_forecast(
         TN_BBOX, FORECAST_START, _settings_with_wn2_path(REAL_FILE)
@@ -204,43 +201,23 @@ def test_chain_serves_wn2_mini_when_present() -> None:
     assert result.forecast.source == "WeatherNext2_Cyclones_Mini"
 
 
-def test_chain_falls_through_to_legacy_gencast_when_wn2_missing(tmp_path: Path) -> None:
-    from stage1a.gencast.devdata import write_placeholder
-    from stage1a.gencast.fallback import get_regional_forecast
-    from stage1a.gencast.provenance import ForecastPath
-
-    gencast_dir = tmp_path / "gencast_fallback"
-    write_placeholder(TN_BBOX, FORECAST_START, num_members=5, directory=gencast_dir)
-
-    settings = Stage1ASettings(
-        wn2_mini_forecast_path=tmp_path / "no_such_file.nc",
-        gencast_precomputed_fallback_dir=gencast_dir,
-    )
-    result = get_regional_forecast(TN_BBOX, FORECAST_START, settings)
-    assert result.provenance.path is ForecastPath.FALLBACK
-    assert result.forecast.source == "GenCast"
-
-
 def test_chain_raises_when_nothing_is_available(tmp_path: Path) -> None:
-    from stage1a.gencast.errors import NoFallbackAvailableError
-    from stage1a.gencast.fallback import get_regional_forecast
+    """GenCast was removed outright -- WN2 Mini missing means nothing is left."""
+    from stage1a.forecast.errors import NoRegionalForecastAvailableError
+    from stage1a.forecast.fallback import get_regional_forecast
 
-    settings = Stage1ASettings(
-        wn2_mini_forecast_path=tmp_path / "no_such_file.nc",
-        gencast_precomputed_fallback_dir=tmp_path / "empty_gencast_dir",
-    )
-    with pytest.raises(NoFallbackAvailableError):
+    settings = Stage1ASettings(wn2_mini_forecast_path=tmp_path / "no_such_file.nc")
+    with pytest.raises(NoRegionalForecastAvailableError):
         get_regional_forecast(TN_BBOX, FORECAST_START, settings)
 
 
 def test_wn2_parse_errors_are_not_masked_by_the_chain(tmp_path: Path) -> None:
     """A malformed WN2 file must surface as WN2ParseError, not fall through."""
+    from stage1a.forecast.fallback import get_regional_forecast
     from stage1a.wn2mini.errors import WN2ParseError
 
     path = tmp_path / "broken.nc"
     wn2_shaped_dataset(num_members=3).to_netcdf(path, engine="h5netcdf")
-
-    from stage1a.gencast.fallback import get_regional_forecast
 
     with pytest.raises(WN2ParseError):
         get_regional_forecast(TN_BBOX, FORECAST_START, _settings_with_wn2_path(path))

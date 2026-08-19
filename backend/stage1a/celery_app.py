@@ -24,7 +24,7 @@ app = Celery(
     "stage1a",
     broker=_settings.redis_url,
     backend=_settings.redis_url,
-    include=["stage1a.gencast.tasks"],
+    include=["stage1a.forecast.tasks"],
 )
 
 app.conf.update(

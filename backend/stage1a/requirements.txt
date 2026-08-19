@@ -25,14 +25,13 @@ geoalchemy2==0.20.0
 celery==5.6.3
 redis==8.1.0
 
-# ---- GenCast forecast I/O (T1A.2-T1A.4) ----
-# GenCast's native output is an xarray.Dataset (confirmed against
-# weathernext/weathernext1_gen/gencast.py: `__call__(... ) -> xarray.Dataset`).
-# NetCDF is how a Colab/TPU-produced forecast is carried to this machine, so
-# the fallback loader reads the model's own format rather than a re-encoding.
-# NOTE: `weathernext` (the GenCast package itself) and `jax` are deliberately
-# NOT pinned here — they are only needed on the TPU/GPU host that performs
-# live inference, and neither is installable-and-usable on this machine.
+# ---- Forecast file I/O (WeatherNext 2 Cyclones Mini) ----
+# WeatherNext 2's export is an xarray.Dataset (confirmed by directly
+# inspecting a real Colab-produced .nc file with xarray.open_dataset).
+# NetCDF is how the manually-run Colab export is carried to this machine.
+# NOTE: `weathernext` (the model package itself) and `jax` are deliberately
+# NOT pinned here — inference is never run in this backend; it happens
+# ahead of time, by hand, in Colab. See data/wn2_mini/README.md.
 numpy==2.5.2
 xarray==2026.7.0
 h5netcdf==1.8.1

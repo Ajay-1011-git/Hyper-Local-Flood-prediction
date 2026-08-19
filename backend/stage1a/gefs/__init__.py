@@ -1,6 +1,6 @@
 """GEFS (NOAA Global Ensemble Forecast System) integration — NOT implemented.
 
-Reserved as the first link in `gencast.fallback.get_regional_forecast`'s
+Reserved as the first link in `forecast.fallback.get_regional_forecast`'s
 chain, per an explicit human decision (2026-08-19): WeatherNext 2 Mini
 should stay secondary to GEFS once GEFS exists, because GEFS is a fully
 automated source with no manual Colab step, while WN2 Mini requires a human

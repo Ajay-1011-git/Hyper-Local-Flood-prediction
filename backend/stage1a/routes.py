@@ -18,9 +18,8 @@ Design note on triggering generation: `get_regional_forecast_route` awaits
 `generate_regional_forecast_task` via Celery and blocking on `.get()`. The
 Celery task exists and is exercised by T1A.5's own tests/VERIFY; calling
 `.delay(...).get()` from inside an async request handler risks a sync-over-
-async deadlock, and — per the T1A.2-T1A.5 amendment — the real working path
-(WeatherNext 2 Mini) is now a fast file-parse, not the TPU-scale job Celery
-was originally justified against. If a future source genuinely needs
+async deadlock, and the real working path (WeatherNext 2 Mini) is a fast
+file-parse, not a TPU-scale job. If a future source genuinely needs
 out-of-band execution, route through the Celery task instead.
 """
 
@@ -36,8 +35,8 @@ from stage1a.config import get_settings
 from stage1a.cwc.client import fetch_station_data, fetch_station_list_cached
 from stage1a.cwc.errors import CWCError
 from stage1a.cwc.parser import find_nearest_station, parse_station_forecast
-from stage1a.gencast.errors import GenCastError
-from stage1a.gencast.tasks import generate_and_persist, read_cached_forecast, read_latest_forecast_id
+from stage1a.forecast.errors import NoRegionalForecastAvailableError
+from stage1a.forecast.tasks import generate_and_persist, read_cached_forecast, read_latest_forecast_id
 from stage1a.shared.contracts import BoundingBox, RegionalEnsembleForecast, RiverStageForecast
 from stage1a.wn2mini.errors import WN2Error
 
@@ -56,9 +55,8 @@ def _current_forecast_window() -> datetime:
     """The forecast_start used when no cached forecast exists yet.
 
     Real "now" — not aligned to any fixed schedule. Harmless for the
-    WeatherNext 2 Mini path (it does not filter by forecast_start, per
-    fallback.py's `_try_wn2_mini`); for the legacy GenCast fallback path it
-    is the window `find_precomputed_file` will look for.
+    WeatherNext 2 Mini path: it does not filter by forecast_start, per
+    forecast/fallback.py's `_try_wn2_mini`.
     """
     return datetime.now(timezone.utc)
 
@@ -81,7 +79,7 @@ async def get_regional_forecast_route() -> JSONResponse:
 
     try:
         result = await generate_and_persist(TARGET_REGION_BBOX, _current_forecast_window())
-    except (GenCastError, WN2Error) as exc:
+    except (NoRegionalForecastAvailableError, WN2Error) as exc:
         raise HTTPException(
             status_code=503,
             detail=f"No regional forecast is currently available: {exc}",

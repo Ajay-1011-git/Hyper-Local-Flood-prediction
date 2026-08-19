@@ -12,7 +12,7 @@ Mapping decisions, stated plainly (§A rule 4 — no silent assumptions):
 2. **Temporal.** `TimestepValue.hour` is emitted at WN2's own 6-hour cadence
    (6, 12, ... up to whatever the file covers), never interpolated —
    inventing intermediate hourly values would be fabricated data, the same
-   principle applied to GenCast's 12h cadence in `gencast/parser.py`. The
+   principle applied to any coarse-cadence forecast source. The
    confirmed file covers 0-120h, beyond this system's stated 72h horizon
    (architecture doc §1/§2.6); the extra hours are kept rather than
    discarded — persisting real data past the officially-required window
@@ -39,7 +39,6 @@ from typing import Final
 import numpy as np
 import xarray as xr
 
-from stage1a.gencast.parser import _UNITS_TO_MM  # shared accepted-units table
 from stage1a.shared.contracts import (
     BoundingBox,
     EnsembleMember,
@@ -65,13 +64,29 @@ _LAT_NAMES: Final[tuple[str, ...]] = ("lat", "latitude")
 _LON_NAMES: Final[tuple[str, ...]] = ("lon", "longitude")
 _BATCH_DIM: Final[str] = "batch"
 
+# Accepted `units` attribute values on the precipitation variable, mapped to
+# the multiplier that converts them to millimetres.
+_UNITS_TO_MM: Final[dict[str, float]] = {
+    "m": 1000.0,
+    "metre": 1000.0,
+    "metres": 1000.0,
+    "meter": 1000.0,
+    "meters": 1000.0,
+    "mm": 1.0,
+    "millimetre": 1.0,
+    "millimetres": 1.0,
+    "millimeter": 1.0,
+    "millimeters": 1.0,
+    "kg m-2": 1.0,  # 1 kg/m^2 of water == 1 mm depth
+}
+
 
 def build_forecast_id(bbox: BoundingBox, forecast_start: datetime) -> str:
     """Deterministic id for `(bbox, forecast_start)`, WN2-namespaced.
 
-    Namespaced separately from `gencast.parser.build_forecast_id` (different
-    prefix) so a WN2 Mini forecast and a GenCast forecast for the same
-    window never collide in the shared `forecast_id`-keyed table.
+    Namespaced with a `wn2mini-` prefix so this source's forecasts are
+    unambiguously distinguishable from any future source's in the shared
+    `forecast_id`-keyed table.
     """
     if forecast_start.tzinfo is None:
         normalised = forecast_start.replace(tzinfo=timezone.utc)
