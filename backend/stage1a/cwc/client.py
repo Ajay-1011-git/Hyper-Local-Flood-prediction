@@ -65,12 +65,20 @@ resources searched, so it can be re-run if the portal adds coverage.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Final, NamedTuple, Optional
 
 import httpx
 
 from stage1a.config import Stage1ASettings, get_settings
 from stage1a.cwc.errors import CWCUnavailableError
+
+#: Redis key for the cached station list. fetch_station_list() takes ~60s
+#: (pagination against ~47k live rows across 3 resources) -- unusable as a
+#: per-request cost for T1A.8's river-stage route. Station locations change
+#: essentially never, so a long TTL is safe.
+_STATION_LIST_CACHE_KEY: Final[str] = "stage1a:cwc:station_list"
+_STATION_LIST_CACHE_TTL_SECONDS: Final[int] = 24 * 60 * 60
 
 _REQUEST_TIMEOUT_SECONDS: Final[float] = 30.0
 _MAX_ROWS_PER_PAGE: Final[int] = 20_000  # this portal's confirmed per-request cap
@@ -214,6 +222,31 @@ def fetch_station_list(
                 break
 
     return list(stations.values())
+
+
+async def fetch_station_list_cached(
+    settings: Optional[Stage1ASettings] = None,
+    resources: tuple[KnownResource, ...] = KNOWN_RELEVANT_RESOURCES,
+) -> list[dict[str, Any]]:
+    """`fetch_station_list`, cached in Redis for `_STATION_LIST_CACHE_TTL_SECONDS`.
+
+    For T1A.8's river-stage route, which cannot afford a ~60s live
+    pagination on every request. Falls through to a live fetch (and
+    refreshes the cache) on a cache miss.
+    """
+    from stage1a.db import get_redis_client  # local import: avoid a cwc<->db cycle
+
+    redis = get_redis_client()
+    cached = await redis.get(_STATION_LIST_CACHE_KEY)
+    if cached is not None:
+        result: list[dict[str, Any]] = json.loads(cached)
+        return result
+
+    stations = fetch_station_list(settings, resources)
+    await redis.set(
+        _STATION_LIST_CACHE_KEY, json.dumps(stations), ex=_STATION_LIST_CACHE_TTL_SECONDS
+    )
+    return stations
 
 
 def fetch_station_data(
