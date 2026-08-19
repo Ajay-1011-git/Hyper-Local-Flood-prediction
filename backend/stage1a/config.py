@@ -14,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MODULE_ROOT: Path = Path(__file__).resolve().parent
@@ -45,6 +46,18 @@ class Stage1ASettings(BaseSettings):
     # ---- Target site (for river-stage nearest-station lookup) ----
     target_site_lat: Optional[float] = None
     target_site_lon: Optional[float] = None
+
+    @field_validator("gencast_precomputed_fallback_dir", mode="after")
+    @classmethod
+    def _anchor_to_module_root(cls, value: Path) -> Path:
+        """Resolve a relative fallback dir against the module root, not the CWD.
+
+        `.env.example` ships `./data/gencast_precomputed` (verbatim §B.1), which
+        would otherwise point somewhere different for every process depending on
+        where it was launched from — the API server, a Celery worker, and pytest
+        all have different working directories.
+        """
+        return value if value.is_absolute() else (MODULE_ROOT / value).resolve()
 
     model_config = SettingsConfigDict(
         env_file=MODULE_ROOT / ".env",
