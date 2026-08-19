@@ -1,6 +1,8 @@
 # Versions pinned to latest stable on PyPI as of 2026-08-19 (verified via
 # `pip index versions <pkg>` in-session per T1B.0's anti-hallucination rule).
 fastapi==0.141.1
+uvicorn==0.52.4
+httpx==0.28.1               # required by FastAPI's TestClient
 pydantic==2.13.4
 pydantic-settings==2.15.0
 sqlalchemy==2.0.52

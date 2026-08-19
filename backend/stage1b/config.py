@@ -58,5 +58,12 @@ class Settings(BaseSettings):
     # ---- Sensor ingestion ----
     sensor_ingest_token: Optional[str] = None
 
+    # ---- Stage 1A integration (T1B.9) ----
+    # Unset by default: Stage 1A has no live endpoint in this repo yet
+    # (built independently). When unset, routes.py falls back to an
+    # explicitly-labeled mock RegionalEnsembleForecast fixture — see its
+    # module docstring.
+    stage1a_regional_forecast_url: Optional[str] = None
+
 
 settings = Settings()
