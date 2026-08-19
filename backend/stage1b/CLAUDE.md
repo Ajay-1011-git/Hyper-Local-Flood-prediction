@@ -100,3 +100,23 @@ verbatim). The full canonical spec — env vars (§B.1), the data contract
 Consult it before starting any task; the data contract itself is
 implemented at `backend/shared/contracts.py` (imported into
 `backend/stage1b/shared/contracts.py`).
+
+## Correct import path (differs from T1B.0's literal VERIFY text)
+
+T1B.0's VERIFY line says `python -c "from stage1b.shared.contracts import
+...`" — that exact invocation does NOT work with this repo's layout, and
+this is not a bug to fix by changing the code. It's a direct, necessary
+consequence of the shared-contracts decision made during T1B.0 (confirmed
+with the human): `backend/stage1b/shared/contracts.py` re-exports from
+`backend/shared/contracts.py` (the single cross-stage source of truth —
+see the paragraph above), and that cross-package import only resolves
+when `backend` itself is on the path as the top-level package.
+
+**The real, working invocation, from the repo root:**
+```
+python -c "from backend.stage1b.shared.contracts import DownscaledForecastField, SensorReading"
+```
+Every test in `backend/stage1b/tests/`, and every script used during this
+stage's development, imports this way (`from backend.stage1b...`, `from
+backend.shared...`) — that's the actual convention this module uses, not
+the literal `stage1b.foo` shorthand in the build doc's prose.
