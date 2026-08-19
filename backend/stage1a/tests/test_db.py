@@ -191,16 +191,10 @@ async def test_repeated_task_runs_leave_exactly_one_row(tmp_path: object) -> Non
     write_placeholder(bbox, start, num_members=3, directory=Path(str(tmp_path)))
 
     settings = Stage1ASettings(gencast_precomputed_fallback_dir=Path(str(tmp_path)))
-    import stage1a.gencast.fallback as fallback_module
 
-    original = fallback_module.get_settings
-    fallback_module.get_settings = lambda: settings  # type: ignore[assignment]
-    try:
-        await init_db()
-        for _ in range(3):
-            await generate_and_persist(bbox, start)
-    finally:
-        fallback_module.get_settings = original  # type: ignore[assignment]
+    await init_db()
+    for _ in range(3):
+        await generate_and_persist(bbox, start, settings)
 
     forecast_id = build_forecast_id(bbox, start)
     async with get_engine().connect() as conn:

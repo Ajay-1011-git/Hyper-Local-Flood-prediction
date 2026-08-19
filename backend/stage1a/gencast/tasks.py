@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Coroutine, Optional, TypeVar
 
 from stage1a.celery_app import app
+from stage1a.config import Stage1ASettings
 from stage1a.db import (
     dispose_connections,
     get_db_session,
@@ -107,10 +108,12 @@ async def read_latest_forecast_id() -> Optional[str]:
 
 
 async def generate_and_persist(
-    bbox: BoundingBox, forecast_start: datetime
+    bbox: BoundingBox,
+    forecast_start: datetime,
+    settings: Optional[Stage1ASettings] = None,
 ) -> RegionalForecastResult:
     """Acquire the forecast (live or fallback) and persist it."""
-    result = get_regional_forecast(bbox, forecast_start)
+    result = get_regional_forecast(bbox, forecast_start, settings)
     await persist_regional_forecast(result)
     logger.info(
         "Persisted regional forecast %s via %s (synthetic=%s)",
