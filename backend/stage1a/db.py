@@ -23,6 +23,7 @@ Design notes
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional
 
@@ -125,17 +126,42 @@ _engine: Optional[AsyncEngine] = None
 _session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 _redis: Optional[aioredis.Redis] = None
 
+# The event loop each singleton was built on. asyncpg connections and Redis
+# sockets are bound to the loop that created them, so a singleton reused
+# across loops fails with "attached to a different loop" or "Event loop is
+# closed". This matters in production, not just in tests: every Celery task
+# runs its coroutine under a fresh `asyncio.run()`, so the second task in a
+# worker process would otherwise inherit the first task's dead pool.
+_engine_loop: Optional[asyncio.AbstractEventLoop] = None
+_redis_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def _current_loop() -> Optional[asyncio.AbstractEventLoop]:
+    """The running loop, or None when called from synchronous code."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
 
 def get_engine() -> AsyncEngine:
-    """Return the process-wide async SQLAlchemy engine."""
-    global _engine
-    if _engine is None:
+    """Return the async SQLAlchemy engine for the current event loop.
+
+    Rebuilt if the loop has changed since it was created; the previous
+    engine belonged to a loop that has already finished, so its pooled
+    connections are unusable and are dropped rather than reused.
+    """
+    global _engine, _engine_loop, _session_factory
+    loop = _current_loop()
+    if _engine is None or (loop is not None and loop is not _engine_loop):
         settings = get_settings()
         _engine = create_async_engine(
             _async_database_url(settings.database_url),
             pool_pre_ping=True,
             future=True,
         )
+        _engine_loop = loop
+        _session_factory = None  # must be rebound to the new engine
     return _engine
 
 
@@ -145,9 +171,10 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
     Usable directly as a FastAPI dependency (T1A.8).
     """
     global _session_factory
+    engine = get_engine()  # may rebuild and clear _session_factory
     if _session_factory is None:
         _session_factory = async_sessionmaker(
-            get_engine(), expire_on_commit=False, class_=AsyncSession
+            engine, expire_on_commit=False, class_=AsyncSession
         )
     session = _session_factory()
     try:
@@ -161,12 +188,17 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
 
 
 def get_redis_client() -> aioredis.Redis:
-    """Return the process-wide async Redis client."""
-    global _redis
-    if _redis is None:
+    """Return the async Redis client for the current event loop.
+
+    Rebuilt on a loop change, for the same reason as `get_engine`.
+    """
+    global _redis, _redis_loop
+    loop = _current_loop()
+    if _redis is None or (loop is not None and loop is not _redis_loop):
         _redis = aioredis.Redis.from_url(
             get_settings().redis_url, decode_responses=True
         )
+        _redis_loop = loop
     return _redis
 
 
@@ -238,11 +270,16 @@ async def dispose_connections() -> None:
     Used by tests and by application shutdown; a disposed singleton is
     recreated lazily on next use.
     """
-    global _engine, _session_factory, _redis
+    global _engine, _session_factory, _redis, _engine_loop, _redis_loop
+    loop = _current_loop()
     if _redis is not None:
-        await _redis.aclose()
+        if _redis_loop is None or loop is _redis_loop:
+            await _redis.aclose()
         _redis = None
+        _redis_loop = None
     if _engine is not None:
-        await _engine.dispose()
+        if _engine_loop is None or loop is _engine_loop:
+            await _engine.dispose()
         _engine = None
+        _engine_loop = None
     _session_factory = None

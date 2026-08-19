@@ -171,3 +171,46 @@ async def test_upsert_river_stage_forecast_is_idempotent_and_geocoded() -> None:
         ).one()
     assert count == 1
     assert wkt == f"POINT({forecast.lon} {forecast.lat})"
+
+
+@requires_postgres
+@requires_redis
+@pytest.mark.asyncio
+async def test_repeated_task_runs_leave_exactly_one_row(tmp_path: object) -> None:
+    """T1A.5 idempotency: three runs of the same window -> one row."""
+    from pathlib import Path
+
+    from stage1a.config import Stage1ASettings
+    from stage1a.gencast.devdata import write_placeholder
+    from stage1a.gencast.parser import build_forecast_id
+    from stage1a.gencast.tasks import generate_and_persist
+    from stage1a.shared.contracts import BoundingBox
+
+    bbox = BoundingBox(min_lat=12.5, max_lat=13.3, min_lon=78.8, max_lon=79.5)
+    start = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    write_placeholder(bbox, start, num_members=3, directory=Path(str(tmp_path)))
+
+    settings = Stage1ASettings(gencast_precomputed_fallback_dir=Path(str(tmp_path)))
+    import stage1a.gencast.fallback as fallback_module
+
+    original = fallback_module.get_settings
+    fallback_module.get_settings = lambda: settings  # type: ignore[assignment]
+    try:
+        await init_db()
+        for _ in range(3):
+            await generate_and_persist(bbox, start)
+    finally:
+        fallback_module.get_settings = original  # type: ignore[assignment]
+
+    forecast_id = build_forecast_id(bbox, start)
+    async with get_engine().connect() as conn:
+        count = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM regional_ensemble_forecast "
+                    "WHERE forecast_id = :fid"
+                ),
+                {"fid": forecast_id},
+            )
+        ).scalar_one()
+    assert count == 1

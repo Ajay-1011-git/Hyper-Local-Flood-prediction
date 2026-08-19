@@ -302,3 +302,42 @@ def test_parse_errors_are_not_masked_by_the_fallback(tmp_path: object) -> None:
         get_regional_forecast(
             VELLORE_BBOX, FORECAST_START, _settings_with_dir(tmp_path)
         )
+
+
+# ------------------------------------------------------------------- T1A.5
+
+
+def test_task_survives_repeated_runs_on_fresh_event_loops() -> None:
+    """Each Celery task uses a new loop; connections must not leak across them."""
+    from stage1a.gencast.tasks import run_task_coroutine
+
+    async def _probe() -> int:
+        from stage1a.db import get_redis_client
+
+        client = get_redis_client()
+        await client.ping()
+        return 1
+
+    from stage1a.tests.conftest import _redis_reachable
+
+    if not _redis_reachable():
+        pytest.skip("Redis not reachable")
+
+    assert run_task_coroutine(_probe()) == 1
+    assert run_task_coroutine(_probe()) == 1  # would raise before the loop fix
+
+
+def test_cache_ttl_matches_the_forecast_window() -> None:
+    from stage1a.gencast.parser import FORECAST_HORIZON_HOURS
+    from stage1a.gencast.tasks import CACHE_TTL
+
+    assert CACHE_TTL.total_seconds() == FORECAST_HORIZON_HOURS * 3600
+
+
+def test_cache_keys_are_derived_from_forecast_id() -> None:
+    """Keys must be a pure function of forecast_id, or re-runs would accumulate."""
+    from stage1a.gencast.tasks import forecast_cache_key, provenance_cache_key
+
+    assert forecast_cache_key("abc") == forecast_cache_key("abc")
+    assert forecast_cache_key("abc") != forecast_cache_key("def")
+    assert provenance_cache_key("abc") != forecast_cache_key("abc")
