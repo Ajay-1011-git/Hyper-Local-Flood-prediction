@@ -11,15 +11,19 @@ htmlcov/
 
 # Env / secrets
 .env
+.env.local
 firmware/**/secrets.h
 
-# Data / large artifacts
+# Data / large artifacts — keep the directory tree, ignore contents
+data/**
+!data/**/
+!**/.gitkeep
 backend/stage1b/data/
-data/dem/
-data/gencast_precomputed/
 *.tif
 *.tiff
 *.npy
+*.nc
+*.zarr/
 
 # Editors / OS
 .DS_Store
