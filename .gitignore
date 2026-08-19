@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Env / secrets
+.env
+firmware/**/secrets.h
+
+# Data / large artifacts
+backend/stage1b/data/
+data/dem/
+data/gencast_precomputed/
+*.tif
+*.tiff
+*.npy
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
