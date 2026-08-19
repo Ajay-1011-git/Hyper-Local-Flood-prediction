@@ -1,0 +1,25 @@
+# Tooling config for the Stage 1A module only.
+# Scoped to backend/stage1a/ so it cannot affect Stage 1B's module.
+
+[tool.pytest.ini_options]
+# Makes `backend/` the import root, so tests import `stage1a.*` — the same
+# path used by the T1A.0 VERIFY command.
+pythonpath = [".."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = ".."
+explicit_package_bases = true
+namespace_packages = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "geoalchemy2.*"]
+ignore_missing_imports = true

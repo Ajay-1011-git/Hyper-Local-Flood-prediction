@@ -1,0 +1,40 @@
+# Local development infrastructure for Stage 1A (TRD §3.4).
+# Scoped to this module; container/volume names are stage1a-prefixed so they
+# cannot collide with a Stage 1B stack running alongside.
+#
+#   docker compose -f backend/stage1a/docker-compose.yml up -d
+#
+# PostGIS is required because RiverStageForecast.lat/lon are indexed as
+# geospatial data for nearest-station queries (T1A.1).
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: stage1a-postgres
+    environment:
+      POSTGRES_USER: floodsystem
+      POSTGRES_PASSWORD: floodsystem
+      POSTGRES_DB: floodsystem
+    ports:
+      - "5432:5432"
+    volumes:
+      - stage1a-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U floodsystem -d floodsystem"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: stage1a-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  stage1a-pgdata:

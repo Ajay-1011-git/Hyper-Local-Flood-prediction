@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Environment / secrets
+.env
+.env.local
+
+# Data caches (large / machine-local) — keep the directory tree, ignore contents
+data/**
+!data/**/
+!**/.gitkeep
+*.nc
+*.zarr/
+*.tif
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

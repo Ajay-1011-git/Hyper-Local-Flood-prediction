@@ -1,0 +1,31 @@
+# Stage 1A — pinned dependencies.
+# Every version below was resolved from PyPI's JSON API in-session
+# (https://pypi.org/pypi/<pkg>/json), not recalled from memory.
+# Target interpreter: CPython 3.13.
+
+# ---- API layer (TRD §3.2: FastAPI, async) ----
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+
+# ---- Validation / config (TRD §7: Pydantic at every external boundary) ----
+pydantic==2.13.4
+pydantic-settings==2.15.0
+
+# ---- Persistence (TRD §3.4: PostgreSQL + PostGIS) ----
+# asyncpg chosen over psycopg2 because TRD §3.2 mandates a non-blocking
+# event loop; SQLAlchemy 2.x's async engine requires an async DBAPI driver.
+sqlalchemy==2.0.52
+asyncpg==0.31.0
+geoalchemy2==0.20.0
+
+# ---- Background jobs / cache (TRD §3.2, §3.4) ----
+celery==5.6.3
+redis==8.1.0
+
+# ---- HTTP client for CWC / India-WRIS (T1A.6) ----
+httpx==0.28.1
+
+# ---- Test & type tooling ----
+pytest==9.1.1
+pytest-asyncio==1.4.0
+mypy==2.3.1
