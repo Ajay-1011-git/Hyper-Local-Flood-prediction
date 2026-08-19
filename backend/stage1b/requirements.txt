@@ -3,6 +3,9 @@
 fastapi==0.141.1
 uvicorn==0.52.4
 httpx==0.28.1               # required by FastAPI's TestClient
+websockets==17.0.1           # T1B.11 WebSocket test client
+psycopg2-binary==2.9.12      # T1B.11 tests' sync DB checks (subprocess-server tests can't share the app's async engine)
+types-psycopg2==2.9.21.20260724
 pydantic==2.13.4
 pydantic-settings==2.15.0
 sqlalchemy==2.0.52

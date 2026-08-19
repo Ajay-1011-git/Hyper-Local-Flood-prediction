@@ -61,6 +61,15 @@ a window skip the DB round-trip entirely.
 `X-Cache: hit-redis | hit-db | hit-db-race | miss` and
 `X-Regional-Forecast-Source` headers make both of these decisions
 observable rather than opaque.
+
+## T1B.11 — POST /api/sensor/reading + WS /ws/site/{site_id}
+
+See sensor/ingest.py's module docstring for the two spec reconciliations
+in this route: the request body omitting `site_id` (TRD §5.1 — resolved
+server-side to `TARGET_SITE_ID`, same single-demo-site pattern as
+T1B.9), and the WebSocket event name/semantics (TRD's `sensor_assimilated`
+name kept, but `assimilated: False` and `updated_region: None` since no
+real Stage 2 assimilation exists yet — confirmed with the human).
 """
 
 from __future__ import annotations
@@ -69,7 +78,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import requests
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Response, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from backend.shared.contracts import (
@@ -77,6 +86,7 @@ from backend.shared.contracts import (
     DownscaledForecastField,
     EnsembleMember,
     RegionalEnsembleForecast,
+    SensorReading,
     TimestepValue,
 )
 from backend.stage1b.config import settings
@@ -90,6 +100,11 @@ from backend.stage1b.downscaling.calibration import IDENTITY_COEFFICIENTS
 from backend.stage1b.downscaling.orchestrator import (
     SiteOutsideTerrainGridError,
     generate_downscaled_field,
+)
+from backend.stage1b.sensor.ingest import (
+    SensorReadingIngestRequest,
+    connection_manager,
+    ingest_sensor_reading,
 )
 from backend.stage1b.tnwrd.client import fetch_rainfall_telemetry
 from backend.stage1b.tnwrd.nearest_station import (
@@ -344,3 +359,45 @@ async def get_downscaled_forecast(lat: float, lon: float, response: Response):
     response.headers["X-Regional-Forecast-Source"] = forecast_source
     response.headers["X-Cache"] = cache_status
     return field
+
+
+# ---------------------------------------------------------------------------
+# T1B.11 — POST /api/sensor/reading + WS /ws/site/{site_id}
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/sensor/reading", response_model=SensorReading)
+async def post_sensor_reading(
+    request: SensorReadingIngestRequest,
+    x_sensor_token: str | None = Header(default=None),
+):
+    """Per TRD §5.1 body shape + this build doc's auth requirement: header
+    must match SENSOR_INGEST_TOKEN, reject with 401 if not. No specific
+    header name is mandated by either document, so a simple custom header
+    (`X-Sensor-Token`) is used — matches the .env.example comment calling
+    this "simple shared-secret auth", appropriate for what the ESP32's
+    constrained HTTPClient can easily set."""
+    if not settings.sensor_ingest_token:
+        raise HTTPException(
+            status_code=503,
+            detail="SENSOR_INGEST_TOKEN is not configured on this deployment.",
+        )
+    if x_sensor_token != settings.sensor_ingest_token:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Sensor-Token")
+
+    site_lat, site_lon = _require_target_site()
+    _ = (site_lat, site_lon)  # not needed here; just confirms a site is configured
+    return await ingest_sensor_reading(request, site_id=settings.target_site_id)
+
+
+@app.websocket("/ws/site/{site_id}")
+async def ws_site(websocket: WebSocket, site_id: str):
+    await connection_manager.connect(site_id, websocket)
+    try:
+        while True:
+            # This is a broadcast-only channel (server -> client); the
+            # server doesn't act on anything the client sends, but must
+            # still await *something* to detect disconnects promptly.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        connection_manager.disconnect(site_id, websocket)
