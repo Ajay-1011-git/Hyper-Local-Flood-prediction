@@ -28,6 +28,7 @@ import type {
   DamageRankEntry,
   DownscaledForecastField,
   RegionalEnsembleForecast,
+  RiverStageForecast,
   SensorReading,
   SimulationResult,
   SiteMeshNodesResponse,
@@ -77,11 +78,13 @@ export function fetchRegionalForecast(): Promise<RegionalEnsembleForecast> {
   return getJson(`${STAGE_BASE_URLS.stage1a}/api/forecast/regional`)
 }
 
-/** Stage 1A's `RiverStageForecast` — kept loosely typed; the frontend only
- *  needs the CWC cross-check INDICATOR (User Flow §3.2), not the full
- *  series, and this project's TS mirrors deliberately cover only the
- *  contracts actually consumed. */
-export function fetchRiverStageForecast(lat: number, lon: number): Promise<unknown> {
+/**
+ * Stage 1A's real `RiverStageForecast` — the CWC cross-check card
+ * (T4C.1) needs `station_proximity_verified`/`breach_probability`, so
+ * this is typed against the real contract now (T4B.0 deliberately left
+ * it as `unknown`, before any real consumer needed the actual fields).
+ */
+export function fetchRiverStageForecast(lat: number, lon: number): Promise<RiverStageForecast> {
   const url = new URL(`${STAGE_BASE_URLS.stage1a}/api/forecast/river-stage`)
   url.searchParams.set('lat', String(lat))
   url.searchParams.set('lon', String(lon))

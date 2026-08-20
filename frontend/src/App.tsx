@@ -4,6 +4,7 @@ import About from './pages/About'
 import CitizenView from './pages/CitizenView'
 import Dashboard from './pages/Dashboard'
 import Landing from './pages/Landing'
+import SiteDetailPanel from './pages/SiteDetailPanel'
 
 /**
  * App shell — real client-side routing (T4C.0), replacing the earlier
@@ -20,7 +21,9 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard" element={<Dashboard />}>
+          <Route path="site/:structureId" element={<SiteDetailPanel />} />
+        </Route>
         <Route path="/citizen" element={<CitizenView />} />
         <Route path="/about" element={<About />} />
       </Routes>

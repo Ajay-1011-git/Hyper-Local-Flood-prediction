@@ -48,12 +48,19 @@ export interface SceneState {
   connectionStatus: ConnectionStatus
   lastSensorAssimilation: LastSensorAssimilation | null
 
+  /** Real `structure_id` (e.g. "Building_01") the operator most recently
+   *  selected — T4C.1's risk-ranking list sets this on click, and
+   *  DamageOverlay (T4B.7) reads it to add a highlight ring on top of its
+   *  own real severity color. `null` means nothing is selected. */
+  highlightedStructureId: string | null
+
   // Actions
   setCurrentHour: (hour: number) => void
   loadSimulationResult: (result: SimulationResult) => void
   setDamageRanking: (entries: DamageRankEntry[]) => void
   setConnectionStatus: (status: ConnectionStatus) => void
   applySocketEvent: (event: SiteSocketEvent) => void
+  setHighlightedStructure: (structureId: string | null) => void
 
   // Selectors
   getNodeStateAt: (hour: number, nodeId: string) => NodeState | undefined
@@ -88,8 +95,10 @@ export const useSceneStore = create<SceneState>()((set, get) => ({
   damageRanking: [],
   connectionStatus: 'closed',
   lastSensorAssimilation: null,
+  highlightedStructureId: null,
 
   setCurrentHour: (hour) => set({ currentHour: hour }),
+  setHighlightedStructure: (structureId) => set({ highlightedStructureId: structureId }),
 
   loadSimulationResult: (result) => {
     const { index, hoursAvailable } = mergeNodeStates({}, result.node_states) // full replace, not merge

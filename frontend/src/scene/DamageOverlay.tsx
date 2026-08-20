@@ -21,6 +21,13 @@
  * material specifically so this mutation is safe and independent per
  * structure.
  *
+ * SELECTION HIGHLIGHT (T4C.1)
+ * ---------------------------------------------------------------
+ * `sceneStore.highlightedStructureId` (set by the risk-ranking list's own
+ * row click) gets a real emissive glow layered on top of its real
+ * severity color — the User Flow doc's own cross-linking requirement
+ * ("clicking a row ... highlights that structure in the 3D scene").
+ *
  * A REAL GEOMETRY LIMITATION, DISCLOSED RATHER THAN FAKED
  * ---------------------------------------------------------------
  * The real GLB has exactly ONE merged `Road_Network` mesh (confirmed:
@@ -57,9 +64,17 @@ export function DamageOverlay({ siteId }: DamageOverlayProps) {
 
   const damageRanking = useSceneStore((s) => s.damageRanking)
   const currentHour = useSceneStore((s) => s.currentHour)
+  const highlightedStructureId = useSceneStore((s) => s.highlightedStructureId)
 
   useEffect(() => {
     if (!data) return
+
+    // Reset every real material's highlight first -- otherwise a
+    // previously-highlighted structure would stay glowing after the
+    // operator selects a different (or no) row.
+    for (const material of data.materialsByName.values()) {
+      material.emissiveIntensity = 0
+    }
 
     const maxRiskScore = damageRanking.reduce(
       (max, entry) => Math.max(max, entry.risk_score),
@@ -74,6 +89,10 @@ export function DamageOverlay({ siteId }: DamageOverlayProps) {
       if (!material) continue // real entry for a structure this GLB doesn't have — skip, don't guess
       const severity = severityForEntry(entry, currentHour, maxRiskScore)
       material.color.set(SEVERITY_COLORS[severity])
+      if (entry.structure_id === highlightedStructureId) {
+        material.emissive.set('#eae2ef')
+        material.emissiveIntensity = 0.55
+      }
     }
 
     const roadEntries = damageRanking.filter(
@@ -88,9 +107,13 @@ export function DamageOverlay({ siteId }: DamageOverlayProps) {
           worstSeverityIndex = Math.max(worstSeverityIndex, SEVERITY_ORDER.indexOf(severity))
         }
         roadMaterial.color.set(SEVERITY_COLORS[SEVERITY_ORDER[worstSeverityIndex]])
+        if (roadEntries.some((entry) => entry.structure_id === highlightedStructureId)) {
+          roadMaterial.emissive.set('#eae2ef')
+          roadMaterial.emissiveIntensity = 0.55
+        }
       }
     }
-  }, [data, damageRanking, currentHour])
+  }, [data, damageRanking, currentHour, highlightedStructureId])
 
   return null
 }

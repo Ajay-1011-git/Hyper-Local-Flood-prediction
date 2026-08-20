@@ -189,6 +189,31 @@ export interface DownscaledForecastField {
   members: DownscaledEnsembleMember[]
 }
 
+/**
+ * Stage 1A — `backend/shared/contracts.py::StageTimestepValue` /
+ * `RiverStageForecast` (T4C.1 — the CWC cross-check card needs the real
+ * fields, upgraded from T4B.0's deliberately loose `unknown` typing).
+ */
+export interface StageTimestepValue {
+  hour: number
+  water_level_m: number
+}
+
+export interface RiverStageForecast {
+  source: string
+  station_id: string
+  station_name: string
+  lat: number
+  lon: number
+  forecast_horizon_hours: number
+  trajectory: StageTimestepValue[]
+  breach_threshold_m: number | null
+  breach_probability: number | null
+  /** Honest gap, per Stage 1A's own CLAUDE.md rule 6: `false` when no
+   *  real nearby CWC station is confirmed — never silently assumed true. */
+  station_proximity_verified: boolean
+}
+
 /** Stage 1A — `backend/shared/contracts.py::RegionalEnsembleForecast` */
 export interface TimestepValue {
   hour: number
