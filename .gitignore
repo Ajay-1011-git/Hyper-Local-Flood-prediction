@@ -24,6 +24,11 @@ backend/stage1b/data/
 *.npy
 *.nc
 *.zarr/
+*.glb
+backend/stage2/blender_prep/output/**
+!backend/stage2/blender_prep/output/**/
+!backend/stage2/blender_prep/output/.gitkeep
+!backend/stage2/blender_prep/output/README.md
 
 # Editors / OS
 .DS_Store

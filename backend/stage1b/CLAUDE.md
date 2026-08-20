@@ -120,3 +120,60 @@ Every test in `backend/stage1b/tests/`, and every script used during this
 stage's development, imports this way (`from backend.stage1b...`, `from
 backend.shared...`) — that's the actual convention this module uses, not
 the literal `stage1b.foo` shorthand in the build doc's prose.
+
+## ADDENDUM — 2026-08-20: real DEM fetched/registered for VIT Vellore (done by Stage 2's session, with explicit permission)
+
+Stage 2 needed a real `dem_metadata` row + real elevation GeoTIFF for the
+real VIT Vellore site to unblock its T2.2 terrain interpolation, and the
+user explicitly authorized touching Stage 1B for this one task (normally
+out of scope per module ownership). What was done, for the record:
+
+1. **Fixed `DATABASE_URL` in `.env`** (gitignored, local-only): it was
+   `postgresql://localhost:5432/floodsystem` with no credentials, which
+   cannot authenticate against the real running Postgres container
+   (`floodsystem`/`floodsystem`, via `docker ps` → `stage1a-postgres`,
+   PostGIS 16). Corrected to
+   `postgresql://floodsystem:floodsystem@localhost:5432/floodsystem`.
+2. **Found and fixed a live schema-drift bug**: the real `dem_metadata`
+   table in the shared Postgres had only 5 columns (missing `id`,
+   `raster_path` NOT NULL, `grid_resolution_km`, `fetched_at`) —
+   created by Stage 2's own integration test calling
+   `_metadata.create_all()` on its own read-only column-subset
+   `Table` definition (`stage2/terrain/dem_source.py`) before this
+   module's real `init_models()` ever ran. Fixed by dropping that
+   incomplete table and running `backend.stage1b.db.init_models()` for
+   real, producing the correct canonical schema. Stage 2's test that
+   caused this was also fixed (no longer calls `create_all` on a table
+   it doesn't own; skips cleanly if the table doesn't exist yet instead).
+3. **Fetched a real CartoDEM raster** via the already-implemented
+   `dem.client.fetch_dem_raster` (Bhoonidhi API, real credentials in
+   `.env`, live-verified: real 200 auth response, real ~47MB tile
+   download) for a bbox centered on the real site (12.969103, 79.156332
+   — confirmed via the GLB's anchor-point fit, not the stale
+   `TARGET_SITE_LAT`/`TARGET_SITE_LON` placeholder still in `.env`),
+   padded ±0.02° (~2.2km) for catchment context. Real tile:
+   `data/dem/dem_e107453e61d9e73f.tif` (1° CartoSat-1 tile,
+   lat 12–13°N / lon 79–80°E, EPSG:4326, elevation range roughly
+   -551m to 980m raw, with the documented ~7% void-pixel issue).
+4. **Ran `dem.processing.compute_and_persist_terrain_grids`** for real
+   (`grid_resolution_km=2.0`, matching this module's regional-terrain
+   convention), producing a real 3-band terrain GeoTIFF
+   (`data/dem/dem_e107453e61d9e73f_terrain.tif`) and updating the
+   `dem_metadata` row (`id=1`) with `terrain_grid_path`/
+   `grid_resolution_km`. Verified end-to-end: Stage 2's
+   `find_terrain_grid_path(12.969103, 79.156332)` resolves this real
+   path, and `interpolate_terrain` against it produces real, finite,
+   physically plausible elevation values (~118.3–119.3m across the real
+   site footprint — not the placeholder 216m used throughout Stage 2's
+   synthetic tests/fixtures).
+5. Both `.tif` files are gitignored (`data/dem/`, matches `*.tif`), not
+   committed — this is real local data, not a fixture. `dem_raster_path`
+   is `data/dem/...` (relative to the repo root); run any script that
+   consumes it from there.
+6. **Not addressed / still open**: the `TARGET_SITE_LAT`/`TARGET_SITE_LON`
+   values in `.env` (12.9165, 79.1325) were left unchanged — they're
+   ~6km from the real site's anchor-fit location and look like a stale
+   placeholder from before the real 3D model was surveyed, but updating
+   them wasn't asked for and may affect Stage 1B's own downscaling
+   target-site logic in ways only the module's owner should decide.
+   Flag for the teammate.
