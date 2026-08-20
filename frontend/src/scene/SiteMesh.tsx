@@ -30,7 +30,16 @@
  * "no re-baked materials — out of scope for this task"), so every mesh
  * assigns a plain material here, chosen by the REAL object name Stage 2's
  * GLB defines (`Building_*` vs `Road_*`) — not a guess from mesh shape.
- * T4B.7 (damage overlay) recolors these same named meshes later.
+ *
+ * ONE MATERIAL INSTANCE PER REAL NAMED OBJECT, NOT PER TYPE
+ * ---------------------------------------------------------------
+ * `Building_01` and `Building_02` get their OWN cloned material each
+ * (only fragments of the SAME real object share one) — required so
+ * `DamageOverlay.tsx` (T4B.7) can recolor one building's material without
+ * silently recoloring the other, which an earlier version of this file
+ * (one shared `BUILDING_MATERIAL` singleton for every building) would
+ * have done. `materialsByName` is returned precisely so that component
+ * doesn't need to re-traverse the scene to find them.
  */
 
 import { useEffect, useMemo } from 'react'
@@ -40,19 +49,23 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 import { queryKeys, siteMeshUrl } from '../api/client'
 
-const BUILDING_MATERIAL = new THREE.MeshStandardMaterial({
+const BUILDING_MATERIAL_TEMPLATE = new THREE.MeshStandardMaterial({
   color: '#c9c2b3',
   roughness: 0.85,
   metalness: 0.05,
 })
-const ROAD_MATERIAL = new THREE.MeshStandardMaterial({
+const ROAD_MATERIAL_TEMPLATE = new THREE.MeshStandardMaterial({
   color: '#3a3a3f',
   roughness: 0.95,
   metalness: 0,
 })
 
-function materialForObjectName(name: string): THREE.Material {
-  return name.startsWith('Road_') ? ROAD_MATERIAL : BUILDING_MATERIAL
+/** A fresh clone, never the shared template itself — every real named
+ *  object (Building_01, Building_02, Road_Network) gets an independently
+ *  mutable material (see module docstring). */
+function buildMaterialForObjectName(name: string): THREE.MeshStandardMaterial {
+  const template = name.startsWith('Road_') ? ROAD_MATERIAL_TEMPLATE : BUILDING_MATERIAL_TEMPLATE
+  return template.clone()
 }
 
 /** Walk up from a mesh to the nearest ancestor carrying a real node name
@@ -71,6 +84,10 @@ export interface SiteMeshFetchResult {
   scene: THREE.Group
   /** `"real_glb"` | `"placeholder_fallback"` | `"unknown"` (header missing). */
   source: string
+  /** Real object name (`Building_01`/`Building_02`/`Road_Network`) ->
+   *  its own independently-mutable material. `DamageOverlay.tsx` (T4B.7)
+   *  recolors these directly rather than re-traversing the scene. */
+  materialsByName: Map<string, THREE.MeshStandardMaterial>
 }
 
 export async function fetchSiteMeshScene(siteId: string): Promise<SiteMeshFetchResult> {
@@ -87,14 +104,21 @@ export async function fetchSiteMeshScene(siteId: string): Promise<SiteMeshFetchR
     loader.parse(buffer, '', resolve, reject)
   })
 
+  const materialsByName = new Map<string, THREE.MeshStandardMaterial>()
   gltf.scene.traverse((child) => {
     if (child instanceof THREE.Mesh) {
-      child.material = materialForObjectName(nearestNamedAncestor(child))
+      const name = nearestNamedAncestor(child)
+      let material = materialsByName.get(name)
+      if (!material) {
+        material = buildMaterialForObjectName(name)
+        materialsByName.set(name, material)
+      }
+      child.material = material
       child.receiveShadow = true
     }
   })
 
-  return { scene: gltf.scene, source }
+  return { scene: gltf.scene, source, materialsByName }
 }
 
 export interface SiteMeshProps {

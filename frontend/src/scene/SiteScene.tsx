@@ -17,13 +17,35 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useQuery } from '@tanstack/react-query'
 
-import { fetchSimulationResult, fetchSiteTerrain, queryKeys } from '../api/client'
+import { fetchDamageRanking, fetchSimulationResult, fetchSiteTerrain, queryKeys } from '../api/client'
+import type { DamageRankEntry } from '../api/types'
 import { useSiteSocket } from '../hooks/useSiteSocket'
+import { SEVERITY_ORDER, severityForEntry } from '../severity'
 import { useSceneStore } from '../store/sceneStore'
+import DamageOverlay from './DamageOverlay'
 import SiteMesh from './SiteMesh'
 import Terrain from './Terrain'
 import UncertaintyEnvelope from './UncertaintyEnvelope'
 import WaterSurface from './WaterSurface'
+
+/** Real, human-readable summary of the current worst structure's real
+ *  severity at this hour — matches DamageOverlay's own per-entry logic,
+ *  not a separate guess. */
+function damageRankingSummary(damageRanking: DamageRankEntry[], currentHour: number): string {
+  if (damageRanking.length === 0) return 'no real structures ranked'
+  const maxRiskScore = damageRanking.reduce((max, entry) => Math.max(max, entry.risk_score), 0)
+  let worstIndex = 0
+  let worstEntryId = damageRanking[0].structure_id
+  for (const entry of damageRanking) {
+    const severity = severityForEntry(entry, currentHour, maxRiskScore)
+    const index = SEVERITY_ORDER.indexOf(severity)
+    if (index > worstIndex) {
+      worstIndex = index
+      worstEntryId = entry.structure_id
+    }
+  }
+  return `worst is ${worstEntryId} (${SEVERITY_ORDER[worstIndex]}) at hour ${currentHour}`
+}
 
 export interface SiteSceneProps {
   siteId: string
@@ -66,6 +88,24 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
   const connectionStatus = useSceneStore((s) => s.connectionStatus)
   const lastSensorAssimilation = useSceneStore((s) => s.lastSensorAssimilation)
 
+  // Real damage ranking load (T4B.7) — same pattern as T4B.5's simulation
+  // load: DamageOverlay only reads the store, this is what actually
+  // fetches Stage 3's real ranking into it. `ranking_update` (the WS
+  // event) has no real emitter anywhere in this repo either (T4B.1's own
+  // documented finding), so this REST fetch is the real source, not the
+  // socket.
+  const setDamageRanking = useSceneStore((s) => s.setDamageRanking)
+  const damageRanking = useSceneStore((s) => s.damageRanking)
+  const { data: damageRankingData, error: damageRankingError } = useQuery({
+    queryKey: queryKeys.damageRanking(siteId),
+    queryFn: () => fetchDamageRanking(siteId),
+    staleTime: Infinity,
+    retry: false,
+  })
+  useEffect(() => {
+    if (damageRankingData) setDamageRanking(damageRankingData)
+  }, [damageRankingData, setDamageRanking])
+
   if (isPending) {
     return <div data-testid="terrain-loading">Loading terrain…</div>
   }
@@ -103,6 +143,7 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
         <SiteMesh siteId={siteId} onSourceChange={setSiteMeshSource} />
         <WaterSurface siteId={siteId} onWetVertexCountChange={setWetVertexCount} />
         <UncertaintyEnvelope siteId={siteId} />
+        <DamageOverlay siteId={siteId} />
         <OrbitControls makeDefault target={[0, 120, 0]} />
       </Canvas>
 
@@ -145,6 +186,12 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
         {lastSensorAssimilation
           ? ` Last assimilation: sensor ${lastSensorAssimilation.sensorId} (${lastSensorAssimilation.updatedNodeIds.length} node(s) updated).`
           : ''}
+        {' '}
+        {damageRankingData
+          ? ` Damage ranking: ${damageRankingSummary(damageRanking, currentHour)}.`
+          : damageRankingError
+            ? ' Damage ranking: unavailable.'
+            : ' Damage ranking: loading…'}
       </div>
 
       {/* Minimal timeline control for T4B.5's own VERIFY (rising/falling
