@@ -7,24 +7,12 @@
  */
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
+import { LANGUAGES } from '../languages'
 import { severityForEntry, type SeverityState } from '../severity'
 import { useSceneStore } from '../store/sceneStore'
 import SeverityBadge from './SeverityBadge'
-
-/** Real supported codes, per `backend/stage4/config.py`'s own
- *  `supported_languages` default — not invented. This selector doesn't
- *  DO anything on the ops UI yet (per the doc's own scoping quote
- *  above); it exists for when a citizen-facing text preview is added to
- *  this dashboard. */
-const LANGUAGES: { code: string; label: string }[] = [
-  { code: 'en', label: 'English' },
-  { code: 'ta', label: 'Tamil' },
-  { code: 'hi', label: 'Hindi' },
-  { code: 'te', label: 'Telugu' },
-  { code: 'ml', label: 'Malayalam' },
-  { code: 'kn', label: 'Kannada' },
-]
 
 export interface TopBarProps {
   siteName: string
@@ -73,13 +61,19 @@ export function TopBar({ siteName }: TopBarProps) {
       <span className="font-data" style={{ fontSize: '0.85rem', color: 'var(--ops-text-dim)' }}>
         {timeToPeakLabel}
       </span>
+      <Link
+        to="/dashboard/alert"
+        className="font-pixel-body"
+        style={{ marginLeft: 'auto', color: 'var(--pixel-accent)', fontSize: '1.1rem' }}
+      >
+        Compose Alert ▸
+      </Link>
       <select
         aria-label="Citizen text preview language"
         value={language}
         onChange={(event) => setLanguage(event.target.value)}
         className="font-data"
         style={{
-          marginLeft: 'auto',
           background: 'var(--pixel-bg-2)',
           color: 'var(--ops-text)',
           border: '2px solid var(--pixel-border)',
