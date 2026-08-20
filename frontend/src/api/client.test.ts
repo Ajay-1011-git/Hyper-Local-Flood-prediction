@@ -7,6 +7,7 @@ import {
   fetchDownscaledForecast,
   fetchSimulationResult,
   queryKeys,
+  siteMeshUrl,
 } from './client'
 
 /**
@@ -79,6 +80,16 @@ describe('endpoint paths match the real backend routes', () => {
     const spy = stubFetch({ id: 'x' })
     await fetchAlert('site with spaces')
     expect(String(spy.mock.calls[0][0])).toContain('site%20with%20spaces')
+  })
+
+  it('builds the Stage 4 site-mesh URL with the real path (T4B.4)', () => {
+    expect(siteMeshUrl('vit-vellore')).toBe(
+      `${STAGE_BASE_URLS.stage4}/api/site-mesh/vit-vellore`,
+    )
+  })
+
+  it('encodes a site id in the site-mesh URL', () => {
+    expect(siteMeshUrl('site with spaces')).toContain('site%20with%20spaces')
   })
 })
 

@@ -26,3 +26,8 @@ numpy==2.5.2
 
 lxml==6.1.2
 lxml-stubs==0.5.1
+
+# ---- T4B.4: site mesh proxy (loads/re-exports Stage 2's real GLB) ----
+# Same trimesh version Stage 2's own glb_loader.py confirms in-session
+# (its module docstring: "API CONFIRMED IN-SESSION (trimesh 5.0.0)").
+trimesh==5.0.0

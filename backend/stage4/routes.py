@@ -70,6 +70,7 @@ from backend.stage4.shared.contracts import (
     SimulationResult,
     SiteTerrainResponse,
 )
+from backend.stage4.scene.site_mesh import build_site_mesh_glb
 from backend.stage4.terrain.dem_proxy import TerrainUnavailableError, build_site_terrain
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ app.add_middleware(
         "X-Simulation-Source",
         "X-Ranking-Source",
         "X-Geometry-Source",
+        "X-Site-Mesh-Source",
         "X-Cache",
     ],
 )
@@ -221,6 +223,35 @@ async def get_terrain(site_id: str) -> SiteTerrainResponse:
     except TerrainUnavailableError as exc:
         logger.error("Terrain unavailable for %s: %s", site_id, exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# T4B.4 — GET /api/site-mesh/{site_id}
+#
+# Closes the same kind of gap T4B.3 did: neither Stage 2's real GLB nor its
+# fitted georeferencing transform was reachable over HTTP, so the 3D scene
+# had buildings/roads nowhere to load from. See scene/site_mesh.py's module
+# docstring for the real transform this applies and its one disclosed
+# approximation (single-point DEM ground elevation).
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/site-mesh/{site_id}")
+async def get_site_mesh(site_id: str) -> Response:
+    """Real (or explicitly-placeholder) `Building_01/02` + `Road_Network`
+    GLB, pre-transformed into the exact scene frame `Terrain.tsx` uses.
+
+    Never 503s: unlike terrain (where a fabricated surface would be
+    indistinguishable from a real one), the placeholder fallback here is
+    deliberately crude and clearly labeled via `X-Site-Mesh-Source`, so it
+    is safe to always return *something* renderable.
+    """
+    glb_bytes, source = await build_site_mesh_glb(site_id)
+    return Response(
+        content=glb_bytes,
+        media_type="model/gltf-binary",
+        headers={"X-Site-Mesh-Source": source},
+    )
 
 
 # ---------------------------------------------------------------------------

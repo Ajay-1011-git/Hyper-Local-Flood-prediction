@@ -148,6 +148,18 @@ export function fetchSiteTerrain(siteId: string): Promise<SiteTerrainResponse> {
   return getJson(`${STAGE_BASE_URLS.stage4}/api/terrain/${encodeURIComponent(siteId)}`)
 }
 
+/**
+ * URL of the site mesh GLB (`Building_01/02` + `Road_Network`) for the 3D
+ * scene (T4B.4). Not `getJson` — the response body is a binary GLB, not
+ * JSON; `SiteMesh.tsx` hands this URL straight to drei's `useGLTF`, which
+ * does its own fetch/parse. See `backend/stage4/scene/site_mesh.py` for
+ * why this is pre-transformed server-side into `Terrain.tsx`'s exact
+ * scene frame, rather than shipping the georeferencing fit to redo here.
+ */
+export function siteMeshUrl(siteId: string): string {
+  return `${STAGE_BASE_URLS.stage4}/api/site-mesh/${encodeURIComponent(siteId)}`
+}
+
 // ------------------------------------------------- TanStack Query helpers
 
 /** Query keys, centralised so a cache invalidation can't typo a key. */
@@ -159,4 +171,5 @@ export const queryKeys = {
   damageRanking: (siteId: string) => ['damageRanking', siteId] as const,
   alert: (siteId: string) => ['alert', siteId] as const,
   siteTerrain: (siteId: string) => ['siteTerrain', siteId] as const,
+  siteMesh: (siteId: string) => ['siteMesh', siteId] as const,
 }

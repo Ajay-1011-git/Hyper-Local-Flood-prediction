@@ -12,11 +12,13 @@
  * rather than an empty canvas or a fake flat ground plane.
  */
 
+import { useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useQuery } from '@tanstack/react-query'
 
 import { fetchSiteTerrain, queryKeys } from '../api/client'
+import SiteMesh from './SiteMesh'
 import Terrain from './Terrain'
 
 export interface SiteSceneProps {
@@ -32,6 +34,7 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
     // Terrain is static for a site; no reason to refetch on focus.
     staleTime: Infinity,
   })
+  const [siteMeshSource, setSiteMeshSource] = useState<string | null>(null)
 
   if (isPending) {
     return <div data-testid="terrain-loading">Loading terrain…</div>
@@ -67,6 +70,7 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           refLon={data.site_lon}
           wireframe={wireframe}
         />
+        <SiteMesh siteId={siteId} onSourceChange={setSiteMeshSource} />
         <OrbitControls makeDefault target={[0, 120, 0]} />
       </Canvas>
 
@@ -93,6 +97,11 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
         {' '}Regional {data.regional.rows}×{data.regional.cols}, site {data.site.rows}×
         {data.site.cols}.
         {nodata > 0 ? ` ${nodata} cell(s) had no DEM data and use the patch mean.` : ''}
+        {siteMeshSource === 'placeholder_fallback'
+          ? ' Buildings/roads: PLACEHOLDER geometry (real GLB not found).'
+          : siteMeshSource === 'real_glb'
+            ? ' Buildings/roads: real site GLB.'
+            : ''}
       </div>
     </div>
   )
