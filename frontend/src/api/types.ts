@@ -176,8 +176,23 @@ export interface Alert {
  * WebSocket event contract (§B.2 of the Stage 4 build document).
  * See `api/websocket.ts` for the real, documented caveat about WHICH
  * endpoint actually emits which of these today.
+ *
+ * `sensor_assimilated`'s `updated_region` shape is transcribed from the
+ * two REAL broadcast call sites, not the contract's own loose prose:
+ *   - Stage 2 (stage2/routes.py, T2.8): `{ node_states: NodeState[] }`,
+ *     the real nodes T2.8's local ghost-cell nudge actually changed.
+ *   - Stage 1B (stage1b/sensor/ingest.py): always `null` — "no Stage 2
+ *     simulation exists yet" from that module's own comment. Real and
+ *     honest, not a bug: Stage 1B has no simulation to update.
  */
 export type SiteSocketEvent =
   | { type: 'simulation_update'; payload: { node_states: NodeState[]; envelope: Record<string, unknown> } }
-  | { type: 'sensor_assimilated'; payload: { sensor_id: string; new_reading?: SensorReading | null; updated_region: unknown } }
+  | {
+      type: 'sensor_assimilated'
+      payload: {
+        sensor_id: string
+        new_reading: SensorReading
+        updated_region: { node_states: NodeState[] } | null
+      }
+    }
   | { type: 'ranking_update'; payload: DamageRankEntry[] }
