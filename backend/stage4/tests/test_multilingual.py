@@ -46,6 +46,14 @@ def test_language_review_status_flags_tamil_pending_review():
     assert "pending_human_review" in LANGUAGE_REVIEW_STATUS["ta"]
 
 
+def test_language_review_status_covers_all_six_supported_languages():
+    """2026-08-20: Hindi/Telugu/Malayalam/Kannada added alongside
+    English/Tamil, per explicit project-owner request."""
+    assert set(LANGUAGE_REVIEW_STATUS.keys()) == {"en", "ta", "hi", "te", "ml", "kn"}
+    for lang in ("ta", "hi", "te", "ml", "kn"):
+        assert "pending_human_review" in LANGUAGE_REVIEW_STATUS[lang]
+
+
 def test_english_text_uses_real_structure_id_and_peak_hour():
     text = generate_alert_text("Extreme", [_entry(structure_id="Building_02", peak_hour=5)], "en")
     assert "Building_02" in text

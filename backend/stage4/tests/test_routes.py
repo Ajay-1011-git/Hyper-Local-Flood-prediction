@@ -59,7 +59,7 @@ async def test_mock_fixture_path_used_when_stage2_stage3_not_configured():
     body = resp.json()
     assert body["site_id"] == "test_site_01"
     assert "<alert" in body["cap_xml"]
-    assert set(body["text_by_language"].keys()) == {"en", "ta"}
+    assert set(body["text_by_language"].keys()) == {"en", "ta", "hi", "te", "ml", "kn"}
     assert body["text_by_language"]["ta"].startswith("[ta]")  # confirms translation path ran
 
 

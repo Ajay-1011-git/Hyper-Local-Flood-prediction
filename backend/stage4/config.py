@@ -29,10 +29,12 @@ class Settings(BaseSettings):
     # specific technical writeup quoting real SACHET CAP feed output.
     sachet_schema_version: Optional[str] = "1.2"
 
-    # English + Tamil at minimum, per PRD NFR-6. A plain comma-separated
-    # string (not a list) so it round-trips through .env without needing
-    # pydantic-settings' JSON-list parsing convention.
-    supported_languages: str = "en,ta"
+    # English + Tamil at minimum, per PRD NFR-6; Hindi/Telugu/Malayalam/
+    # Kannada added 2026-08-20 per explicit project-owner request (all
+    # real Sarvam-supported codes -- see sarvam_client.py). A plain
+    # comma-separated string (not a list) so it round-trips through .env
+    # without needing pydantic-settings' JSON-list parsing convention.
+    supported_languages: str = "en,ta,hi,te,ml,kn"
 
     # T4A.2: Sarvam AI (real translation + text-to-speech), per explicit
     # project-owner decision (2026-08-20). Never given a default value --

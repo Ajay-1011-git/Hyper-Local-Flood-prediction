@@ -42,6 +42,10 @@ class _FakeResponse:
 def test_sarvam_language_code_maps_real_short_codes():
     assert sarvam_language_code("en") == "en-IN"
     assert sarvam_language_code("ta") == "ta-IN"
+    assert sarvam_language_code("hi") == "hi-IN"
+    assert sarvam_language_code("te") == "te-IN"
+    assert sarvam_language_code("ml") == "ml-IN"
+    assert sarvam_language_code("kn") == "kn-IN"
 
 
 def test_sarvam_language_code_rejects_unsupported_language():
@@ -131,3 +135,17 @@ def test_real_live_translate_call():
     assert isinstance(result, str)
     assert len(result) > 0
     assert result != "Rising water expected within 5 hours."  # a real translation happened
+
+
+@requires_live_host("api.sarvam.ai")
+@pytest.mark.parametrize("language", ["hi", "te", "ml", "kn"])
+def test_real_live_translate_call_for_each_new_language(language):
+    """2026-08-20 addition: Hindi/Telugu/Malayalam/Kannada, per explicit
+    project-owner request -- each verified against the real live API,
+    not just the code-mapping unit test above."""
+    if not settings.sarvam_api_key:
+        pytest.skip("SARVAM_API_KEY not configured locally")
+    result = translate_text("Rising water expected within 5 hours.", "en", language)
+    assert isinstance(result, str)
+    assert len(result) > 0
+    assert result != "Rising water expected within 5 hours."

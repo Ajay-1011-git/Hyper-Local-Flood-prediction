@@ -41,9 +41,19 @@ from backend.stage4.config import settings
 
 SARVAM_BASE_URL = "https://api.sarvam.ai"
 
+#: 2026-08-20 addition, per explicit project-owner request: Hindi, Telugu,
+#: Malayalam, Kannada added alongside English/Tamil. All four real codes
+#: confirmed directly against Sarvam's own docs this session (the same
+#: fetch that confirmed en-IN/ta-IN originally listed the full real set:
+#: "hi-IN, bn-IN, kn-IN, ml-IN, mr-IN, od-IN, pa-IN, ta-IN, te-IN, en-IN,
+#: gu-IN") -- not guessed or assumed from general BCP-47 convention.
 _SARVAM_LANGUAGE_CODE: Dict[str, str] = {
     "en": "en-IN",
     "ta": "ta-IN",
+    "hi": "hi-IN",
+    "te": "te-IN",
+    "ml": "ml-IN",
+    "kn": "kn-IN",
 }
 
 _REQUEST_TIMEOUT_S = 30

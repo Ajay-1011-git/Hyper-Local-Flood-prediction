@@ -49,10 +49,18 @@ from backend.stage4.alerts.sarvam_client import synthesize_speech, translate_tex
 from backend.stage4.shared.contracts import DamageRankEntry
 
 #: Real, checkable review status per supported language — see module
-#: docstring.
+#: docstring. 2026-08-20: Hindi/Telugu/Malayalam/Kannada added alongside
+#: Tamil, per explicit project-owner request — all real, live Sarvam
+#: translations (see `sarvam_client.py`'s real confirmed language codes),
+#: same "pending review" honesty as Tamil already had: a real translation
+#: service's output still isn't the same as native-speaker review.
 LANGUAGE_REVIEW_STATUS: Dict[str, str] = {
     "en": "native",
     "ta": "machine_translated_via_sarvam_ai_pending_human_review",
+    "hi": "machine_translated_via_sarvam_ai_pending_human_review",
+    "te": "machine_translated_via_sarvam_ai_pending_human_review",
+    "ml": "machine_translated_via_sarvam_ai_pending_human_review",
+    "kn": "machine_translated_via_sarvam_ai_pending_human_review",
 }
 
 
