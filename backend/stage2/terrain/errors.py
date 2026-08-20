@@ -24,3 +24,12 @@ class AmbiguousNorthAxisError(TerrainError):
     An arbitrary rotation would need more than a single axis label to
     resolve correctly.
     """
+
+
+class AmbiguousGeometryError(TerrainError):
+    """A building's mesh geometry doesn't clearly resolve to one footprint.
+
+    CLAUDE.md rule 2: never fabricate a building's footprint if the GLB's
+    geometry is ambiguous (multiple disconnected pieces, degenerate/
+    collinear points) — flag it and ask, rather than guess.
+    """

@@ -15,19 +15,9 @@ signatures were checked directly against the installed package this
 session (`from_origin(west, north, xsize, ysize)`,
 `transform(src_crs, dst_crs, xs, ys, zs=None)`).
 
-SCENE-TO-REAL-WORLD AXIS MAPPING — A STATED ASSUMPTION, NOT CONFIRMED
----------------------------------------------------------------------------
-`AnchorPoint.north_axis` (e.g. `"+Y"`) names only which scene axis points
-geographic North — a single label, not a full rotation. This module
-assumes: (1) the ground plane is the scene's X/Y axes (Z is up, matching
-Blender's default), and (2) the horizontal axes are right-handed East/
-North/Up, so the axis perpendicular to `north_axis` is East, in a fixed
-90-degree relationship. Only the four axis-aligned values
-(`+X`/`-X`/`+Y`/`-Y`) are handled — anything else raises
-`AmbiguousNorthAxisError` rather than guessing, per CLAUDE.md rule 4. THIS
-MUST BE CONFIRMED against the real `anchor_point.json` once it exists; if
-Blender's actual convention differs (e.g. Y-up instead of Z-up), this
-mapping needs correcting, not the axis-label parsing.
+Scene-to-real-world axis conversion (an explicitly stated, unconfirmed
+assumption) lives in `anchor_transform.py`, shared with
+`footprint_extraction.py` — see that module's docstring.
 """
 
 from __future__ import annotations
@@ -44,47 +34,7 @@ from rasterio.warp import Resampling, reproject
 from rasterio.warp import transform as warp_transform
 
 from stage2.shared.contracts import AnchorPoint, TerrainGrid
-from stage2.terrain.errors import AmbiguousNorthAxisError
-
-_METERS_PER_DEGREE_LAT = 111_320.0
-
-# (north_axis) -> (east_scene_axis_index, east_sign, north_scene_axis_index, north_sign)
-# Ground plane is scene (x=0, y=1); z (index 2) is up and unused here.
-_AXIS_MAPPING: Dict[str, Tuple[int, float, int, float]] = {
-    "+Y": (0, 1.0, 1, 1.0),
-    "-Y": (0, -1.0, 1, -1.0),
-    "+X": (1, -1.0, 0, 1.0),
-    "-X": (1, 1.0, 0, -1.0),
-}
-
-
-def _scene_offset_to_latlon(
-    scene_xyz: np.ndarray, anchor: AnchorPoint
-) -> Tuple[float, float]:
-    """Convert a scene-space point to (lat, lon) via the anchor point.
-
-    Raises:
-        AmbiguousNorthAxisError: if `anchor.north_axis` isn't one of the
-            four axis-aligned values this function can confidently handle.
-    """
-    mapping = _AXIS_MAPPING.get(anchor.north_axis)
-    if mapping is None:
-        raise AmbiguousNorthAxisError(
-            f"AnchorPoint.north_axis={anchor.north_axis!r} is not one of "
-            f"{sorted(_AXIS_MAPPING)}; cannot confidently convert scene "
-            "coordinates to real-world orientation without guessing."
-        )
-    east_idx, east_sign, north_idx, north_sign = mapping
-
-    offset = np.asarray(scene_xyz) - np.asarray(anchor.scene_local_position)
-    east_m = east_sign * offset[east_idx] * anchor.scene_to_real_scale_factor
-    north_m = north_sign * offset[north_idx] * anchor.scene_to_real_scale_factor
-
-    delta_lat = north_m / _METERS_PER_DEGREE_LAT
-    delta_lon = east_m / (
-        _METERS_PER_DEGREE_LAT * math.cos(math.radians(anchor.real_world_lat))
-    )
-    return anchor.real_world_lat + delta_lat, anchor.real_world_lon + delta_lon
+from stage2.terrain.anchor_transform import scene_offset_to_latlon as _scene_offset_to_latlon
 
 
 def compute_site_bbox_latlon(
