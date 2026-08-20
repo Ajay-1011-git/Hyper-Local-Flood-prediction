@@ -90,31 +90,55 @@ export function buildWaterGrid(mesh: SiteMeshNodesResponse): WaterGrid {
 }
 
 /**
- * Displace every vertex to `baseElevation + max(depth_mean_m, 0)` for the
- * given real per-node-at-this-hour states. Returns how many vertices are
- * genuinely wet (`depth_mean_m > 0`), so the caller can decide whether
+ * Displace every vertex to `baseElevation + max(selectDepth(state), 0)`
+ * for the given real per-node-at-this-hour states. Returns how many
+ * vertices got a genuinely positive depth, so a caller can decide whether
  * there's anything real to show.
  *
+ * `selectDepth` is the one seam between this shared displacement logic
+ * and WHICH real field drives it — `WaterSurface.tsx` passes
+ * `depth_mean_m`, `UncertaintyEnvelope.tsx` (T4B.6) passes
+ * `depth_min_m`/`depth_max_m` for its lower/upper bands. All three are
+ * real Stage 2 `NodeState` fields; nothing here derives a value Stage 2
+ * didn't already compute.
+ *
  * `max(depth, 0)` is a rendering floor, not fabricated physics: Stage 2's
- * own contract never documents a negative `depth_mean_m`, but nothing
- * stops a future upstream bug from emitting one, and a negative
- * displacement would sink the surface below its own dry resting height,
- * which is not a real water depth in either direction.
+ * own contract never documents a negative depth, but nothing stops a
+ * future upstream bug from emitting one, and a negative displacement
+ * would sink the surface below its own dry resting height, which is not
+ * a real water depth in either direction.
  */
+export function applyField(
+  positionAttr: THREE.BufferAttribute,
+  nodeIdByVertex: string[],
+  baseElevationByVertex: Float32Array,
+  nodeStates: Record<string, NodeState>,
+  selectDepth: (state: NodeState) => number,
+): number {
+  let wetCount = 0
+  for (let i = 0; i < nodeIdByVertex.length; i += 1) {
+    const nodeId = nodeIdByVertex[i]
+    const state = nodeId ? nodeStates[nodeId] : undefined
+    const depth = state ? Math.max(selectDepth(state), 0) : 0
+    if (depth > 0) wetCount += 1
+    positionAttr.setY(i, baseElevationByVertex[i] + depth)
+  }
+  positionAttr.needsUpdate = true
+  return wetCount
+}
+
+/** `applyField` specialised to `depth_mean_m` — `WaterSurface.tsx`'s own field. */
 export function applyDepths(
   positionAttr: THREE.BufferAttribute,
   nodeIdByVertex: string[],
   baseElevationByVertex: Float32Array,
   nodeStates: Record<string, NodeState>,
 ): number {
-  let wetCount = 0
-  for (let i = 0; i < nodeIdByVertex.length; i += 1) {
-    const nodeId = nodeIdByVertex[i]
-    const state = nodeId ? nodeStates[nodeId] : undefined
-    const depth = state ? Math.max(state.depth_mean_m, 0) : 0
-    if (depth > 0) wetCount += 1
-    positionAttr.setY(i, baseElevationByVertex[i] + depth)
-  }
-  positionAttr.needsUpdate = true
-  return wetCount
+  return applyField(
+    positionAttr,
+    nodeIdByVertex,
+    baseElevationByVertex,
+    nodeStates,
+    (state) => state.depth_mean_m,
+  )
 }

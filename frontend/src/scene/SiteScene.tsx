@@ -18,9 +18,11 @@ import { OrbitControls } from '@react-three/drei'
 import { useQuery } from '@tanstack/react-query'
 
 import { fetchSimulationResult, fetchSiteTerrain, queryKeys } from '../api/client'
+import { useSiteSocket } from '../hooks/useSiteSocket'
 import { useSceneStore } from '../store/sceneStore'
 import SiteMesh from './SiteMesh'
 import Terrain from './Terrain'
+import UncertaintyEnvelope from './UncertaintyEnvelope'
 import WaterSurface from './WaterSurface'
 
 export interface SiteSceneProps {
@@ -58,6 +60,12 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
     if (simulationResult) loadSimulationResult(simulationResult)
   }, [simulationResult, loadSimulationResult])
 
+  // Real WS wiring (T4B.6) — see useSiteSocket's own docstring: nothing
+  // in this app ever connected T4B.1's SiteSocket before this.
+  useSiteSocket(siteId)
+  const connectionStatus = useSceneStore((s) => s.connectionStatus)
+  const lastSensorAssimilation = useSceneStore((s) => s.lastSensorAssimilation)
+
   if (isPending) {
     return <div data-testid="terrain-loading">Loading terrain…</div>
   }
@@ -94,6 +102,7 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
         />
         <SiteMesh siteId={siteId} onSourceChange={setSiteMeshSource} />
         <WaterSurface siteId={siteId} onWetVertexCountChange={setWetVertexCount} />
+        <UncertaintyEnvelope siteId={siteId} />
         <OrbitControls makeDefault target={[0, 120, 0]} />
       </Canvas>
 
@@ -131,6 +140,11 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           : simulationError
             ? 'Water: no live simulation for this site yet.'
             : 'Water: loading simulation…'}
+        {' '}
+        {`WS: ${connectionStatus}.`}
+        {lastSensorAssimilation
+          ? ` Last assimilation: sensor ${lastSensorAssimilation.sensorId} (${lastSensorAssimilation.updatedNodeIds.length} node(s) updated).`
+          : ''}
       </div>
 
       {/* Minimal timeline control for T4B.5's own VERIFY (rising/falling

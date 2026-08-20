@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 
 import type { NodeState, SiteMeshNodesResponse } from '../api/types'
-import { applyDepths, buildWaterGrid, parseNodeId } from './waterGeometry'
+import { applyDepths, applyField, buildWaterGrid, parseNodeId } from './waterGeometry'
 
 function makeNodeState(overrides: Partial<NodeState> = {}): NodeState {
   return {
@@ -118,5 +118,36 @@ describe('applyDepths', () => {
     const wetCount = applyDepths(position, grid.nodeIdByVertex, grid.baseElevationByVertex, nodeStates)
 
     expect(wetCount).toBe(2)
+  })
+})
+
+describe('applyField', () => {
+  it('drives displacement off whichever real field the selector names (T4B.6)', () => {
+    const grid = buildWaterGrid(mesh)
+    const lowerPos = grid.geometry.getAttribute('position') as THREE.BufferAttribute
+    const nodeStates = {
+      n_0_0: makeNodeState({ node_id: 'n_0_0', depth_min_m: 0.1, depth_max_m: 0.9 }),
+    }
+
+    applyField(lowerPos, grid.nodeIdByVertex, grid.baseElevationByVertex, nodeStates, (s) => s.depth_min_m)
+    expect(lowerPos.getY(0)).toBeCloseTo(100 + 0.1, 5)
+
+    const upperGrid = buildWaterGrid(mesh)
+    const upperPos = upperGrid.geometry.getAttribute('position') as THREE.BufferAttribute
+    applyField(upperPos, upperGrid.nodeIdByVertex, upperGrid.baseElevationByVertex, nodeStates, (s) => s.depth_max_m)
+    expect(upperPos.getY(0)).toBeCloseTo(100 + 0.9, 5)
+  })
+
+  it('applyDepths is applyField specialised to depth_mean_m', () => {
+    const gridA = buildWaterGrid(mesh)
+    const gridB = buildWaterGrid(mesh)
+    const posA = gridA.geometry.getAttribute('position') as THREE.BufferAttribute
+    const posB = gridB.geometry.getAttribute('position') as THREE.BufferAttribute
+    const nodeStates = { n_0_0: makeNodeState({ node_id: 'n_0_0', depth_mean_m: 0.55 }) }
+
+    applyDepths(posA, gridA.nodeIdByVertex, gridA.baseElevationByVertex, nodeStates)
+    applyField(posB, gridB.nodeIdByVertex, gridB.baseElevationByVertex, nodeStates, (s) => s.depth_mean_m)
+
+    expect(posA.getY(0)).toBeCloseTo(posB.getY(0), 6)
   })
 })
