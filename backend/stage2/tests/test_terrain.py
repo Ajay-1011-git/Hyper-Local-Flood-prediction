@@ -112,26 +112,41 @@ def test_interpolate_terrain_resolution_changes_grid_shape(tmp_path: Path) -> No
 @requires_postgres
 @pytest.mark.asyncio
 async def test_find_terrain_grid_path_real_db_round_trip() -> None:
+    """`dem_metadata` is Stage 1B's table, not Stage 2's — this test must
+    never create it itself (an earlier version called
+    `_metadata.create_all()` using dem_source.py's own read-only column
+    subset, which on a fresh DB silently created an INCOMPLETE table
+    missing Stage 1B's real NOT NULL columns like `raster_path`; a real
+    session hit exactly this drift on 2026-08-20). If the table doesn't
+    exist yet, skip with a clear message pointing at Stage 1B's own
+    `init_models()` rather than fabricating a wrong schema."""
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from stage2.config import get_settings
-    from stage2.terrain.dem_source import (
-        _metadata,
-        _to_asyncpg_url,
-        find_terrain_grid_path,
-    )
+    from stage2.terrain.dem_source import _to_asyncpg_url, find_terrain_grid_path
 
     settings = get_settings()
     engine = create_async_engine(_to_asyncpg_url(settings.stage1b_database_url))
+    async with engine.connect() as probe_conn:
+        exists = (
+            await probe_conn.execute(text("SELECT to_regclass('public.dem_metadata')"))
+        ).scalar()
+    if exists is None:
+        await engine.dispose()
+        pytest.skip(
+            "dem_metadata table doesn't exist -- run Stage 1B's "
+            "backend.stage1b.db.init_models() first (Stage 2 must "
+            "never create Stage 1B's table itself)."
+        )
+
     try:
         async with engine.begin() as conn:
-            await conn.run_sync(_metadata.create_all)
             await conn.execute(
                 text(
                     "INSERT INTO dem_metadata "
-                    "(min_lat, max_lat, min_lon, max_lon, terrain_grid_path) "
-                    "VALUES (:min_lat, :max_lat, :min_lon, :max_lon, :path) "
+                    "(min_lat, max_lat, min_lon, max_lon, raster_path, terrain_grid_path) "
+                    "VALUES (:min_lat, :max_lat, :min_lon, :max_lon, :raster_path, :path) "
                     "ON CONFLICT DO NOTHING"
                 ),
                 {
@@ -139,6 +154,7 @@ async def test_find_terrain_grid_path_real_db_round_trip() -> None:
                     "max_lat": 13.5,
                     "min_lon": 78.5,
                     "max_lon": 80.0,
+                    "raster_path": "/fake/path/raw.tif",
                     "path": "/fake/path/terrain.tif",
                 },
             )
