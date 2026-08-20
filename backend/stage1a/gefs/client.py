@@ -169,15 +169,32 @@ def _fetch_one(
     "try the previous cycle," not a hard parse failure. A malformed body
     that DOES look GRIB-shaped is what `GEFSParseError` is for (see
     `parser.py`), not an HTML response.
+
+    2026-08-20 fix (found via live testing, not inspection): a real
+    network-level failure (timeout, connection drop, mid-response
+    disconnect -- `httpx.RequestError` and its subclasses, e.g.
+    `ReadTimeout`, `RemoteProtocolError`) is NOT an HTTP response at all,
+    so the status-code check below never saw it -- it propagated
+    uncaught, crashing the whole regional-forecast fetch instead of
+    "try the previous cycle" like every other unavailability signal here.
+    Confirmed reproducible against the real live transports (both S3 and
+    NOMADS hit this independently in the same session). Now treated as
+    just another transient-failure attempt, same retry/backoff as a bad
+    status code -- matches `cwc/client.py`'s already-correct
+    `except httpx.HTTPError` pattern, not independently invented.
     """
     url = _gefs_file_url(base_url, cycle, member, lead_hour, bbox)
     last_status = 0
     last_snippet = b""
     for attempt in range(_TRANSIENT_RETRY_ATTEMPTS):
-        response = client.get(url, timeout=timeout_s)
-        if response.status_code < 400 and response.content[:4] == b"GRIB":
-            return response.content
-        last_status, last_snippet = response.status_code, response.content[:30]
+        try:
+            response = client.get(url, timeout=timeout_s)
+        except httpx.HTTPError as exc:
+            last_status, last_snippet = -1, f"{type(exc).__name__}: {exc}".encode()[:80]
+        else:
+            if response.status_code < 400 and response.content[:4] == b"GRIB":
+                return response.content
+            last_status, last_snippet = response.status_code, response.content[:30]
         if attempt < _TRANSIENT_RETRY_ATTEMPTS - 1:
             time.sleep(_TRANSIENT_RETRY_DELAY_S * (2**attempt))  # exponential backoff
 
@@ -260,13 +277,32 @@ def _fetch_one_s3(
 
     Raises:
         GEFSUnavailableError: if the cycle/object isn't published (real
-            S3 404) -- the caller treats this as "try an earlier cycle".
+            S3 404), or a real network-level failure occurred (timeout,
+            connection drop, mid-response disconnect -- see 2026-08-20
+            fix note below) -- the caller treats either as "try an
+            earlier cycle" or "fall through to NOMADS".
         GEFSParseError: if the object exists but its index or body is not
             the expected shape.
+
+    2026-08-20 fix (found via live testing, not inspection): a real
+    `httpx.RequestError` (e.g. `RemoteProtocolError`, `ReadTimeout`) from
+    either `client.get()` call below is NOT an HTTP response, so the
+    status-code checks never saw it -- it propagated uncaught, crashing
+    the whole regional-forecast fetch instead of falling through to
+    NOMADS like every other unavailability signal here. Confirmed
+    reproducible against the real live S3 transport in this session. Now
+    caught and converted to `GEFSUnavailableError`, matching
+    `cwc/client.py`'s already-correct `except httpx.HTTPError` pattern.
     """
     object_url = _s3_object_url(base_url, cycle, member, lead_hour)
 
-    idx_response = client.get(f"{object_url}.idx", timeout=timeout_s)
+    try:
+        idx_response = client.get(f"{object_url}.idx", timeout=timeout_s)
+    except httpx.HTTPError as exc:
+        raise GEFSUnavailableError(
+            f"GEFS S3 .idx fetch failed for {member} f{lead_hour:03d} "
+            f"(network error: {type(exc).__name__}: {exc})."
+        ) from exc
     if idx_response.status_code == 404:
         raise GEFSUnavailableError(
             f"GEFS cycle {cycle.isoformat()} not published on S3 for {member} "
@@ -280,7 +316,13 @@ def _fetch_one_s3(
 
     start, end = _parse_apcp_byte_range(idx_response.text)
     range_header = f"bytes={start}-{end}" if end is not None else f"bytes={start}-"
-    response = client.get(object_url, headers={"Range": range_header}, timeout=timeout_s)
+    try:
+        response = client.get(object_url, headers={"Range": range_header}, timeout=timeout_s)
+    except httpx.HTTPError as exc:
+        raise GEFSUnavailableError(
+            f"GEFS S3 range fetch failed for {member} f{lead_hour:03d} "
+            f"(network error: {type(exc).__name__}: {exc})."
+        ) from exc
     if response.status_code >= 400:
         raise GEFSUnavailableError(
             f"GEFS range fetch failed for {member} f{lead_hour:03d} "

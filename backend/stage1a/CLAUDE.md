@@ -212,3 +212,35 @@ A task is done only when: the code runs and imports cleanly, `mypy`
 passes, the task's VERIFY block passes with real pasted output, tests
 pass, the data model matches §B.2 exactly, and only the files listed
 in "Files you may touch" were changed.
+
+## ADDENDUM 3 — 2026-08-20: real bug found live-testing GEFS, fixed
+
+Found during a full-system wiring audit (a different session, with the
+project owner's explicit go-ahead to fix it): `get_regional_forecast()`
+(the whole point of which is to gracefully degrade GEFS → WN2 Mini → 503)
+**crashed** on real live network calls (`httpx.RemoteProtocolError`, then
+separately `httpx.ReadTimeout`) instead of falling through. Root cause:
+`gefs/client.py`'s `_fetch_one_s3`/`_fetch_one` only checked HTTP status
+codes on a returned response — neither wrapped the actual `client.get()`
+call in a `try/except`, so a real network-level failure (not an HTTP
+response at all) propagated uncaught. `cwc/client.py` already had the
+correct pattern (`except httpx.HTTPError`, the base class covering both
+network and status-code failures) — GEFS's was narrower and missed that
+whole class of real failure.
+
+Fixed: both call sites now catch `httpx.HTTPError` and convert it to
+`GEFSUnavailableError`, letting the existing retry/transport-fallback
+logic (S3 → NOMADS → cycle retry → WN2 Mini) work as originally designed.
+5 new regression tests added to `tests/test_gefs_client.py` (network
+errors on both S3 call sites, NOMADS retry-then-succeed and
+exhausted-retries paths, and an end-to-end S3-network-error →
+NOMADS-fallback check) — none of this class of failure was covered
+before, which is how it shipped.
+
+Real VERIFY: re-ran the real live fallback chain after the fix —
+`source=GEFS, resolution_km=27.75, 31 members, 12 timesteps,
+provenance.path=ForecastPath.GEFS` — succeeded cleanly this time (real
+network conditions vary run to run; the point of the fix is that a
+transient failure no longer crashes the whole chain, not that failures
+stop happening). 84/84 tests pass (was 79 — 5 new), mypy clean (34
+source files, only the pre-existing Celery stub note).

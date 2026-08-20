@@ -152,6 +152,66 @@ def test_fetch_one_s3_missing_object_raises_unavailable() -> None:
         )
 
 
+def test_fetch_one_s3_network_error_on_idx_raises_unavailable_not_uncaught() -> None:
+    """2026-08-20 regression test: a real network-level failure (not an
+    HTTP response at all) on the .idx request must become
+    GEFSUnavailableError, not propagate as a raw httpx exception --
+    reproduced live against the real S3 transport this session
+    (httpx.RemoteProtocolError), confirmed as a genuine bug before this
+    fix (the status-code checks never saw it)."""
+    from stage1a.gefs.client import _fetch_one_s3
+
+    client = httpx.Client()
+    client.get = MagicMock(side_effect=httpx.RemoteProtocolError("simulated: server disconnected"))  # type: ignore[method-assign]
+    with pytest.raises(GEFSUnavailableError):
+        _fetch_one_s3(
+            client, "https://s3.test", datetime(2026, 8, 20, tzinfo=timezone.utc),
+            "c00", 6, 10.0,
+        )
+
+
+def test_fetch_one_s3_network_error_on_range_request_raises_unavailable() -> None:
+    """Same regression, but on the second (range) request rather than the
+    .idx sidecar -- both call sites needed the fix independently."""
+    from stage1a.gefs.client import _fetch_one_s3
+
+    client = httpx.Client()
+    client.get = MagicMock(  # type: ignore[method-assign]
+        side_effect=[
+            httpx.Response(200, text=_REAL_IDX_EXCERPT),
+            httpx.ReadTimeout("simulated: read timed out"),
+        ]
+    )
+    with pytest.raises(GEFSUnavailableError):
+        _fetch_one_s3(
+            client, "https://s3.test", datetime(2026, 8, 20, tzinfo=timezone.utc),
+            "c00", 6, 10.0,
+        )
+
+
+def test_transport_falls_back_to_nomads_when_s3_has_a_real_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The S3-network-error fix must actually reach _fetch_one_any_transport's
+    existing fallback logic, not just raise GEFSUnavailableError in
+    isolation -- an end-to-end check of the fix, not just the unit."""
+    from stage1a.gefs.client import _fetch_one_any_transport
+
+    grib_bytes = REAL_FIXTURE.read_bytes()
+
+    def _fake_get(url: str, **kwargs: object) -> httpx.Response:
+        if "s3.test" in url:
+            raise httpx.ConnectError("simulated: connection refused")
+        return httpx.Response(200, content=grib_bytes)
+
+    client = httpx.Client()
+    client.get = _fake_get  # type: ignore[assignment]
+    settings = Stage1ASettings(gefs_s3_base_url="https://s3.test")
+
+    result = _fetch_one_any_transport(
+        client, settings, datetime(2026, 8, 20, 6, tzinfo=timezone.utc), "c00", 6, TN_BBOX,
+    )
+    assert result == grib_bytes
+
+
 def test_transport_falls_back_to_nomads_when_s3_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     """S3 unavailable must fall through to the NOMADS filter transport."""
     import stage1a.gefs.client as client_module
@@ -194,8 +254,11 @@ def test_gefs_file_url_contains_real_confirmed_shape() -> None:
 # --------------------------------------------------------------- _fetch_one
 
 
-def _mock_client(responses: list[httpx.Response]) -> httpx.Client:
-    """A real `httpx.Client` whose `.get` is replaced with a canned sequence."""
+def _mock_client(responses: list[httpx.Response | Exception]) -> httpx.Client:
+    """A real `httpx.Client` whose `.get` is replaced with a canned
+    sequence -- items may be real `Response`s or `Exception` instances
+    (raised, matching `MagicMock(side_effect=...)`'s real behavior), for
+    simulating network-level failures alongside HTTP responses."""
     client = httpx.Client()
     mock_get = MagicMock(side_effect=responses)
     client.get = mock_get  # type: ignore[method-assign]
@@ -228,6 +291,34 @@ def test_fetch_one_retries_then_succeeds() -> None:
 def test_fetch_one_raises_unavailable_after_exhausting_retries() -> None:
     client = _mock_client([
         httpx.Response(403, content=b"Request for Future Data") for _ in range(10)
+    ])
+    with pytest.raises(GEFSUnavailableError):
+        _fetch_one(
+            client, "https://example.test", datetime(2099, 1, 1, tzinfo=timezone.utc),
+            "c00", 6, TN_BBOX, 10.0,
+        )
+
+
+def test_fetch_one_retries_past_a_real_network_error() -> None:
+    """2026-08-20 regression test: NOMADS's own transport has the same
+    class of bug as S3's -- a real network-level failure (not an HTTP
+    response) must be treated as just another transient attempt, not
+    propagate uncaught."""
+    grib_bytes = REAL_FIXTURE.read_bytes()
+    client = _mock_client([
+        httpx.ReadTimeout("simulated: read timed out"),
+        httpx.Response(200, content=grib_bytes),
+    ])
+    result = _fetch_one(
+        client, "https://example.test", datetime(2026, 8, 19, tzinfo=timezone.utc),
+        "c00", 6, TN_BBOX, 10.0,
+    )
+    assert result == grib_bytes
+
+
+def test_fetch_one_raises_unavailable_after_network_errors_exhaust_retries() -> None:
+    client = _mock_client([
+        httpx.ConnectError("simulated: connection refused") for _ in range(10)
     ])
     with pytest.raises(GEFSUnavailableError):
         _fetch_one(
