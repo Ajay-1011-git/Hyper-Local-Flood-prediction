@@ -39,16 +39,31 @@ decision.
 
 ## Calibration coefficients at request time
 
-T1B.6's `fit_calibration` needs real matched (TN WRD reading, coarse
-regional estimate) pairs to fit non-trivial terrain coefficients — which,
-like the point above, isn't possible yet without Stage 1A's historical
-archive. This route therefore uses `IDENTITY_COEFFICIENTS` for the actual
-downscaling math (a real, honest choice — not a shortcut: fabricating
+**2026-08-20: this route now genuinely ATTEMPTS a real T1B.6 fit.**
+Previously it hardcoded `IDENTITY_COEFFICIENTS` because Stage 1A had no
+historical archive to fit against — correct at the time, but it left
+`fit_calibration` permanently dead code that would never run even once
+the archive existed. Stage 1A now really does persist every forecast it
+serves, so `_get_calibration_coefficients` builds real matched samples
+(see `downscaling/calibration_data.py`) and calls `fit_calibration` for
+real.
+
+Falling back to `IDENTITY_COEFFICIENTS` is still the expected outcome
+while the archive is young — `fit_calibration` requires
+`MIN_CALIBRATION_SAMPLES` real matched pairs and refuses to fit fewer.
+The difference is that this is now the *measured* result of a real
+attempt (logged with the real archived-forecast and station-reading
+counts), not an assumption baked into the call site. Fabricating
 historical regional estimates to force a non-trivial fit would violate
-this project's core anti-hallucination rule). `calibration_confidence`
-on the response is still the REAL, independently-computable T1B.5 result
-(a real nearby TN WRD station does exist for Vellore) — these are two
-separate signals and this route doesn't conflate them.
+this project's core anti-hallucination rule and is not done.
+
+Note the real single-station limitation, inherited and reported rather
+than hidden: with one nearby station every sample shares one terrain
+triple, so only the intercept is identifiable — `fit_calibration`
+reports the rest via `unidentifiable_terrain_parameters`.
+`calibration_confidence` remains a separate, independently-computed
+T1B.5 signal (a real TN WRD station is 2.944km from the real site,
+measured live) and this route does not conflate the two.
 
 ## Persistence + caching
 
@@ -96,9 +111,15 @@ from backend.stage1b.db import (
     get_db_session,
     get_redis_client,
 )
-from backend.stage1b.downscaling.calibration import IDENTITY_COEFFICIENTS
+from backend.stage1b.downscaling.calibration import (
+    IDENTITY_COEFFICIENTS,
+    MIN_CALIBRATION_SAMPLES,
+    fit_calibration,
+)
+from backend.stage1b.downscaling.calibration_data import build_matched_samples
 from backend.stage1b.downscaling.orchestrator import (
     SiteOutsideTerrainGridError,
+    _sample_terrain_at_site,
     generate_downscaled_field,
 )
 from backend.stage1b.sensor.ingest import (
@@ -213,13 +234,84 @@ async def _get_terrain_grid_path(site_lat: float, site_lon: float) -> str:
 
 
 async def _get_calibration_confidence(site_lat: float, site_lon: float) -> str:
-    """Real T1B.5 nearest-station lookup — this is cheap enough (a single
-    CKAN + CSV fetch) to do per-request; unlike calibration coefficient
-    fitting (which needs Stage 1A's not-yet-available historical archive,
-    see module docstring), this doesn't depend on anything missing."""
+    """Real T1B.5 nearest-station lookup.
+
+    2026-08-20: the telemetry fetch this makes is NOT cheap (an earlier
+    version of this docstring claimed it was) — it really downloads ~24MB
+    / 174,340 rows in ~17s. It is now cached in-process by
+    `tnwrd/client.py` (see `TELEMETRY_CACHE_TTL_S`), which is what makes
+    calling it per-request acceptable.
+    """
     telemetry = fetch_rainfall_telemetry()
     _station, distance_km = find_nearest_tnwrd_station(site_lat, site_lon, telemetry)
     return get_calibration_confidence(distance_km)
+
+
+async def _get_calibration_coefficients(
+    site_lat: float,
+    site_lon: float,
+    calibration_confidence: str,
+    terrain: tuple[float, float, float],
+) -> dict:
+    """Attempt a REAL T1B.6 calibration fit; fall back to identity honestly.
+
+    2026-08-20 fix: `fit_calibration` was fully built and tested but
+    **never called in production** — `routes.py` hardcoded
+    `IDENTITY_COEFFICIENTS`, making the entire T1B.6 code path
+    permanently dead. That was correct when Stage 1A had no archive to
+    fit against, but Stage 1A now really does persist every forecast it
+    serves, so the data is genuinely accumulating and nothing would ever
+    have started using it. This function closes that gap.
+
+    The fallback to `IDENTITY_COEFFICIENTS` is still real and expected
+    while the archive is young (`fit_calibration` needs
+    `MIN_CALIBRATION_SAMPLES` real matched pairs) — the difference is
+    that it is now the *measured* outcome of a real attempt, logged with
+    the real sample counts, rather than an assumption baked into the
+    call site.
+    """
+    elevation_m, slope_deg, aspect_deg = terrain
+    telemetry = fetch_rainfall_telemetry()
+    station, _distance_km = find_nearest_tnwrd_station(site_lat, site_lon, telemetry)
+
+    samples = await build_matched_samples(
+        telemetry=telemetry,
+        station_id=str(station["station_id"]),
+        elevation_m=elevation_m,
+        slope_deg=slope_deg,
+        aspect_deg=aspect_deg,
+    )
+
+    if len(samples) < MIN_CALIBRATION_SAMPLES:
+        logger.info(
+            "Calibration attempted against real data and declined: %d matched "
+            "sample(s) (need %d) from %d archived regional forecast(s) and %d "
+            "reading(s) at station %r — using identity/no-op coefficients "
+            "(downscaling is a pass-through until the archive covers enough "
+            "real observation times).",
+            len(samples),
+            MIN_CALIBRATION_SAMPLES,
+            samples.n_archived_forecasts,
+            samples.n_station_readings,
+            station["station_id"],
+        )
+        return dict(IDENTITY_COEFFICIENTS)
+
+    coefficients = fit_calibration(
+        historical_tnwrd_readings=samples.observed_mm,
+        historical_regional_estimates=samples.coarse_mm,
+        elevation_m=samples.elevation_m,
+        slope_deg=samples.slope_deg,
+        aspect_deg=samples.aspect_deg,
+        calibration_confidence=calibration_confidence,
+    )
+    logger.info(
+        "Real calibration fit from %d matched sample(s) at station %r: %s",
+        len(samples),
+        station["station_id"],
+        coefficients,
+    )
+    return coefficients
 
 
 def _require_target_site() -> tuple[float, float]:
@@ -301,13 +393,25 @@ async def get_downscaled_forecast(lat: float, lon: float, response: Response):
             )
 
             try:
+                # Terrain is sampled here (rather than only inside
+                # generate_downscaled_field) because the calibration fit
+                # needs the same real elevation/slope/aspect values --
+                # sampling once and passing them to both keeps the two
+                # consistent by construction, and surfaces a
+                # SiteOutsideTerrainGridError before any calibration work.
+                terrain = _sample_terrain_at_site(
+                    terrain_grid_path, site_lat, site_lon
+                )
+                calibration_coeffs = await _get_calibration_coefficients(
+                    site_lat, site_lon, calibration_confidence, terrain
+                )
                 field = generate_downscaled_field(
                     regional_forecast=regional_forecast,
                     site_id=settings.target_site_id,
                     site_lat=site_lat,
                     site_lon=site_lon,
                     terrain_grid_path=terrain_grid_path,
-                    calibration_coeffs=IDENTITY_COEFFICIENTS,
+                    calibration_coeffs=calibration_coeffs,
                     calibration_confidence=calibration_confidence,
                 )
             except SiteOutsideTerrainGridError as exc:

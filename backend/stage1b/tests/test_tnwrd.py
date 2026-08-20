@@ -196,3 +196,82 @@ def test_fetch_deduplicates_across_resources():
 
     assert call_count["n"] == 2  # both resources were fetched
     assert len(df) == 1  # but the identical row was deduplicated
+
+
+# --------------------------------------------------------------- caching
+# (2026-08-20 addition -- see fetch_rainfall_telemetry's docstring for why
+# the cache exists: the real fetch is ~24MB / 174,340 rows / ~16-17s
+# measured live, not the "cheap" the old routes.py call site claimed.)
+
+
+def _single_resource_mocks(call_count: dict):
+    """Mocks for one real-shaped CSV resource, counting real downloads."""
+    csv_text = _fake_csv_text(
+        [
+            "1,Vellore,Tamil Nadu SW GW,33,Tamil Nadu,595,Vellore,-,-,-,-,-,-,-,-,-,"
+            "12.94861100,79.13888900,05-01-2026 12:20,1.0",
+        ]
+    )
+    parsed_df = pd.read_csv(io.StringIO(csv_text), dtype=str)
+
+    def fake_get(url, **kwargs):
+        return _FakeResponse(
+            200,
+            {
+                "success": True,
+                "result": {
+                    "resources": [
+                        {"name": "2026-2030", "format": "CSV", "url": "http://fake/a.csv"}
+                    ]
+                },
+            },
+        )
+
+    def fake_read_csv(url, **kwargs):
+        call_count["n"] += 1
+        return parsed_df
+
+    return fake_get, fake_read_csv
+
+
+def test_second_fetch_is_served_from_cache_without_redownloading():
+    call_count = {"n": 0}
+    fake_get, fake_read_csv = _single_resource_mocks(call_count)
+
+    with patch("backend.stage1b.tnwrd.client.requests.get", side_effect=fake_get):
+        with patch("backend.stage1b.tnwrd.client.pd.read_csv", side_effect=fake_read_csv):
+            first = fetch_rainfall_telemetry()
+            second = fetch_rainfall_telemetry()
+
+    assert call_count["n"] == 1  # the real download happened exactly once
+    assert first is second  # same object, not merely equal
+
+
+def test_force_refresh_bypasses_the_cache():
+    call_count = {"n": 0}
+    fake_get, fake_read_csv = _single_resource_mocks(call_count)
+
+    with patch("backend.stage1b.tnwrd.client.requests.get", side_effect=fake_get):
+        with patch("backend.stage1b.tnwrd.client.pd.read_csv", side_effect=fake_read_csv):
+            fetch_rainfall_telemetry()
+            fetch_rainfall_telemetry(force_refresh=True)
+
+    assert call_count["n"] == 2
+
+
+def test_expired_cache_entry_is_refetched(monkeypatch: pytest.MonkeyPatch):
+    """A stale entry must not be served past its TTL -- the whole point of
+    a TTL rather than a permanent memo, since the upstream dataset really
+    does update hourly."""
+    import backend.stage1b.tnwrd.client as client_module
+
+    call_count = {"n": 0}
+    fake_get, fake_read_csv = _single_resource_mocks(call_count)
+    monkeypatch.setattr(client_module, "TELEMETRY_CACHE_TTL_S", 0.0)
+
+    with patch("backend.stage1b.tnwrd.client.requests.get", side_effect=fake_get):
+        with patch("backend.stage1b.tnwrd.client.pd.read_csv", side_effect=fake_read_csv):
+            fetch_rainfall_telemetry()
+            fetch_rainfall_telemetry()
+
+    assert call_count["n"] == 2

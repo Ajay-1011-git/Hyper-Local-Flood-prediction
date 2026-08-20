@@ -177,3 +177,76 @@ out of scope per module ownership). What was done, for the record:
    them wasn't asked for and may affect Stage 1B's own downscaling
    target-site logic in ways only the module's owner should decide.
    Flag for the teammate.
+
+## ADDENDUM — 2026-08-20: deep audit of Stage 1B (DEM, TN WRD, downscaling, wiring)
+
+Everything below was found by running Stage 1B's real code against real
+data and real infrastructure, not by inspection.
+
+### Confirmed genuinely real and working (no change needed)
+
+1. **TN WRD telemetry is real**: a live CKAN fetch returned **174,340 real
+   rows across 145 real stations**, spanning 2003-04-24 → 2026-08-18.
+2. **The nearest-station lookup is real and now favourable**: against the
+   corrected site coordinates (12.969223, 79.155934 — the real
+   GLB-surveyed anchor, standardized earlier the same day), the real
+   `Vellore` station is **2.944 km** away, so
+   `calibration_confidence = "calibrated_nearby_station"` is a real,
+   earned value — not the honest-fallback path.
+3. **DEM/terrain sampling is real**: the real registered terrain GeoTIFF
+   samples at the real site to `elevation=119.63m, slope=0.328°,
+   aspect=152.37°` — physically plausible for Vellore, not NaN or a
+   placeholder.
+4. **The route works end-to-end, live**: real uvicorn + real curl →
+   HTTP 200, `X-Regional-Forecast-Source: stage1a_live` (real Stage 1A
+   integration), `site_id=vit-vellore`, real non-zero downscaled values,
+   real DB persistence, and `X-Cache: miss → hit-redis` with byte-identical
+   bodies (18.7s → 0.046s).
+
+### Two real defects found and fixed
+
+5. **`fit_calibration` (T1B.6) was permanently dead code.** It was fully
+   built and tested, but **nothing in production ever called it** —
+   `routes.py` hardcoded `IDENTITY_COEFFICIENTS`. That was correct when
+   written (Stage 1A had no archive), but it meant the path would never
+   run *even once the archive existed*. Stage 1A now really does persist
+   every forecast it serves, so this was fixed: new
+   `downscaling/calibration_data.py` builds real matched (observed,
+   coarse) pairs from Stage 1A's real `regional_ensemble_forecast` table
+   plus real TN WRD readings, and `_get_calibration_coefficients` now
+   attempts a **real fit**, falling back to identity only as a *measured*
+   outcome. Real log line from the live run:
+
+       Calibration attempted against real data and declined: 0 matched
+       sample(s) (need 20) from 8 archived regional forecast(s) and 1167
+       reading(s) at station 'Vellore' — using identity/no-op coefficients
+
+   **Downscaling is therefore still a pass-through today, and that is the
+   honest state, not a bug**: the real `Vellore` station's readings stop
+   at 2026-08-08, while the archive's forecasts are valid from 2026-08-19
+   — an 11-day gap, so zero overlap. It will begin fitting for real, by
+   itself, once both sides advance far enough to overlap by
+   `MIN_CALIBRATION_SAMPLES` (20) matched pairs. Note the real
+   single-station limit: one station means one constant terrain triple,
+   so only the intercept is ever identifiable — `fit_calibration` reports
+   the rest via `unidentifiable_terrain_parameters` rather than
+   fabricating terrain coefficients.
+
+6. **The TN WRD fetch was uncached, on the per-request path.** The old
+   call site's comment claimed it was "cheap enough ... to do
+   per-request"; measured live, it is **~24MB / 174,340 rows / ~16-17s**.
+   Fixed with an in-process TTL cache (`TELEMETRY_CACHE_TTL_S = 1800s`,
+   deliberately under the dataset's own hourly update cadence, so no real
+   update can be missed), plus `force_refresh=True` to bypass. Measured
+   after the fix: **16.00s → 0.0000s** on the second call.
+   A regression this introduced was caught by the suite and fixed too:
+   the module-level cache leaked between tests
+   (`test_fetch_deduplicates_across_resources` failed `0 == 2`, i.e. zero
+   downloads attempted) — `tests/conftest.py` now clears it around every
+   test.
+
+### Verification
+
+`pytest backend/stage1b/tests/` → **88 passed** (was 78; 10 new: 3 cache
+tests, 7 calibration-data tests including real Postgres round-trips).
+`mypy .` from `backend/stage1b/` → clean, 31 source files.
