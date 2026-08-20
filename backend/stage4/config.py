@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # pydantic-settings' JSON-list parsing convention.
     supported_languages: str = "en,ta"
 
+    # T4A.2: Sarvam AI (real translation + text-to-speech), per explicit
+    # project-owner decision (2026-08-20). Never given a default value --
+    # a blank/missing key must fail loudly (SarvamNotConfiguredError), not
+    # silently fall back to fabricated translated text.
+    sarvam_api_key: Optional[str] = None
+
     @property
     def supported_languages_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",") if lang.strip()]
