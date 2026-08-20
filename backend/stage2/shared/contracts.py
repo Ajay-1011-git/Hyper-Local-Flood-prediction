@@ -171,4 +171,24 @@ __all__ = [
     "NodeHazardTimestep",
     "NodeState",
     "SimulationResult",
+    "MeshEdge",
 ]
+
+
+class MeshEdge(BaseModel):
+    """One adjacency edge between two `ComputationalMeshNode`s (T2.4).
+
+    AUTHORED HERE, modeled directly on RBTV1/mSWE-GNN's real confirmed
+    graph-edge structure (`database/graph_creation.py`'s
+    `convert_mesh_to_pyg`, fetched and read this session): the model's
+    real `edge_index` connects neighboring mesh CELLS (not triangle
+    vertices), and its `edge_attr` carries `face_distance` (distance
+    between cell centers) and `edge_slope` (`DEM_diff / face_distance`).
+    `distance_m`/`slope` below are named to make that mapping obvious for
+    T2.6, not independently invented field names.
+    """
+
+    node_id_a: str
+    node_id_b: str
+    distance_m: float
+    slope: float  # (elevation_b - elevation_a) / distance_m

@@ -19,7 +19,15 @@ from stage2.ingestion.glb_loader import REQUIRED_OBJECT_NAMES
 
 
 def write_synthetic_site_glb(path: Path) -> None:
-    """Write a real GLB with the 4 required named objects, arbitrary geometry."""
+    """Write a real GLB with the 4 required named objects, arbitrary geometry.
+
+    Objects are translated to distinct, non-overlapping ground positions
+    (a small arbitrary campus-like layout) — `trimesh.creation.box`
+    centers each box at the origin by default, and an earlier version of
+    this fixture left every object stacked on top of the others, which a
+    real T2.4 integration run caught (DoubleTaggedNodeError) even though
+    each per-building unit test passed in isolation.
+    """
     scene = trimesh.Scene()
     extents = {
         "Building_01": [8.0, 6.0, 12.0],
@@ -27,8 +35,15 @@ def write_synthetic_site_glb(path: Path) -> None:
         "Building_03": [6.0, 6.0, 15.0],
         "Road_Network": [40.0, 4.0, 0.2],
     }
+    translations = {
+        "Building_01": [-15.0, -10.0, 0.0],
+        "Building_02": [10.0, 5.0, 0.0],
+        "Building_03": [-10.0, 12.0, 0.0],
+        "Road_Network": [0.0, -20.0, 0.0],
+    }
     for name in REQUIRED_OBJECT_NAMES:
         box = trimesh.creation.box(extents=extents[name])
+        box.apply_translation(translations[name])
         scene.add_geometry(box, geom_name=name, node_name=name)
     path.write_bytes(scene.export(file_type="glb"))
 

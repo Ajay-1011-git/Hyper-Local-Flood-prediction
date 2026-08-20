@@ -67,6 +67,28 @@ def scene_offset_to_east_north_m(
     return float(east_m), float(north_m)
 
 
+def latlon_to_east_north_m(
+    lat: float, lon: float, anchor: AnchorPoint
+) -> Tuple[float, float]:
+    """Inverse of the geographic half of `scene_offset_to_latlon`.
+
+    Converts a plain (lat, lon) — e.g. a `TerrainGrid` cell's position —
+    into (east_m, north_m) offset from the anchor, the same frame
+    `footprint_extraction.py`'s `BuildingFootprint.footprint_polygon`
+    already uses. Needed so T2.4 can test terrain cells against building
+    footprints in one consistent coordinate frame (`TerrainGrid` is
+    natively in lat/lon; footprints are natively in anchor-relative
+    meters) — this function is the reconciliation between them.
+    """
+    delta_lat = lat - anchor.real_world_lat
+    delta_lon = lon - anchor.real_world_lon
+    north_m = delta_lat * METERS_PER_DEGREE_LAT
+    east_m = delta_lon * METERS_PER_DEGREE_LAT * math.cos(
+        math.radians(anchor.real_world_lat)
+    )
+    return east_m, north_m
+
+
 def scene_offset_to_latlon(
     scene_xyz: np.ndarray, anchor: AnchorPoint
 ) -> Tuple[float, float]:
