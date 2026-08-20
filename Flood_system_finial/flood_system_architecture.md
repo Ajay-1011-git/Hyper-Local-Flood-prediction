@@ -24,7 +24,14 @@ No stage claims precision beyond what its underlying method can actually support
 
 ### 2.1 Regional rainfall ensemble forecast
 
-**Model:** GenCast (Google DeepMind), a diffusion-based AI global ensemble weather model, published in *Nature*, December 2024, released with open code and weights.
+> **Amendment 3 — 2026-08-20: the regional forecast source is now GEFS (primary) → WeatherNext 2 Cyclones Mini (fallback). GenCast is fully removed.**
+> The GenCast description below is preserved as the original design record and is **no longer what the system runs** — it was removed outright (no TPU/JAX access or credentials, ever) and must not be reintroduced, including as a fallback.
+> - **GEFS (NOAA Global Ensemble Forecast System), 0.25° / ~27.75km, 31 real members** — primary, fully automated, no manual step. Chosen as primary on 2026-08-20 specifically because its 0.25° grid is ~4× finer than WeatherNext 2 Mini's 1.0°, which directly improves the input to Stage 1B's terrain-based downscaling (§2.3).
+> - **WeatherNext 2 Cyclones Mini, 1.0° / ~111km, 8 members** — fallback only; requires a human to run a Colab notebook ahead of time.
+>
+> Note the coincidence worth not misreading: GEFS's 0.25° resolution happens to match the "~28km (0.25° grid)" figure quoted for GenCast below, but they are unrelated models. Implementation and full live verification: `backend/stage1a/CLAUDE.md` (Addendum 2) and `backend/stage1a/gefs/`. Prior source-priority history: `stage1a_amendment_2_source_priority_correction.md`.
+
+**Model (ORIGINAL DESIGN — superseded, see the amendment note above):** GenCast (Google DeepMind), a diffusion-based AI global ensemble weather model, published in *Nature*, December 2024, released with open code and weights.
 
 **Technical specification:**
 - Native spatial resolution: ~28km (0.25° grid)

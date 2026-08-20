@@ -1,5 +1,7 @@
 # STAGE 1A — Amendment: Replace GenCast with WeatherNext 2 Cyclones Mini (verified, working pipeline)
 
+> **SUPERSEDED ON SOURCE PRIORITY (2026-08-20).** Everything below about WeatherNext 2 Mini's *mechanics* is still correct and still in use (manual Colab `.nc` export, `load_wn2_mini_forecast`, `parse_wn2_mini_output`, 8 members, 6-hourly, `resolution_km = 111.0`). What changed is its **position**: WN2 Mini is now the **FALLBACK**, not the primary source. **GEFS (0.25°, ~27.75km, 31 members) is the primary** as of 2026-08-20 — it is fully automated and ~4× finer, which directly improves Stage 1B's downscaling. This document's Open Question 1 ("is WN2 primary or secondary?") is therefore resolved: **secondary.** See `backend/stage1a/CLAUDE.md` (Addendum 2) for the real implementation and live verification, and `stage1a_amendment_2_source_priority_correction.md` for the priority-decision history.
+
 > **This is a change request against the existing `stage1a_build_instructions.md`, not a fresh build.** A team member independently ran a real, working Colab session using WeatherNext 2's official demo notebook and confirmed a working end-to-end inference-to-file pipeline. This document tells you exactly what changed, what to audit first, and what to build now. Follow the operating contract's WORKING METHOD (§A) — plan first, audit before editing, don't overwrite work that's already correct.
 
 ---

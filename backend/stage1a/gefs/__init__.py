@@ -1,13 +1,25 @@
-"""GEFS (NOAA Global Ensemble Forecast System) integration — NOT implemented.
+"""GEFS (NOAA Global Ensemble Forecast System, 0.25deg) — REAL, PRIMARY source.
 
-Reserved as the first link in `forecast.fallback.get_regional_forecast`'s
-chain, per an explicit human decision (2026-08-19): WeatherNext 2 Mini
-should stay secondary to GEFS once GEFS exists, because GEFS is a fully
-automated source with no manual Colab step, while WN2 Mini requires a human
-to run a notebook ahead of time.
+Built for real on 2026-08-20 at the project owner's request (previously an
+honest always-raising stub). GEFS is the FIRST link in
+`forecast.fallback.get_regional_forecast`'s chain; WeatherNext 2 Mini is
+the fallback.
 
-GEFS integration itself was never in scope for this amendment — building it
-was not requested. This module exists only so the chain's *shape* is right
-now, and a real implementation can be dropped into `fetch_gefs_forecast`
-later without touching `fallback.py` again.
+Two reasons it is primary, both real:
+* **Resolution.** 0.25deg (~27.75km) native vs WN2 Mini's 1.0deg
+  (~111km). Stage 1B's terrain-based downscaling starts from this
+  regional field, so a finer input is a genuine accuracy gain — the
+  stated reason for the switch.
+* **Automation.** Fully automated; WN2 Mini needs a human to run a Colab
+  notebook and copy the export into place ahead of time.
+
+Modules:
+    client.py  — real live fetching (S3 primary, NOMADS fallback transport)
+    parser.py  — GRIB2 decode + regional mean -> the §B.2 contract
+    errors.py  — GEFSUnavailableError (advance the chain) /
+                 GEFSParseError (a real bug, never fallen through on)
+
+Every real API/format fact these modules rely on was confirmed by
+fetching and decoding live data in-session, not from documentation — see
+each module's own docstring for what was verified and how.
 """

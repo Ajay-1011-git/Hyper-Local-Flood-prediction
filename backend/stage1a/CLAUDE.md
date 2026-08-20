@@ -12,11 +12,12 @@ that used to be `gencast/` is now `forecast/`, holding only the
 model-agnostic orchestration (source chain, Celery task, persistence,
 provenance) that survives regardless of which model is behind it.
 
-**Current regional forecast source chain**: GEFS (`gefs/` — an honest
-stub, not yet implemented, always raises) → **WeatherNext 2 Cyclones
-Mini** (`wn2mini/` — real, confirmed-working, a file a human manually
-exports from Colab and copies into `data/wn2_mini/`). If neither produces
-a forecast, the API returns a 503 — there is no further fallback.
+**Current regional forecast source chain**: **GEFS** (`gefs/` — REAL and
+PRIMARY as of 2026-08-20, see the addendum below) → **WeatherNext 2
+Cyclones Mini** (`wn2mini/` — real, confirmed-working, a file a human
+manually exports from Colab and copies into `data/wn2_mini/`, now the
+FALLBACK). If neither produces a forecast, the API returns a 503 — there
+is no further fallback.
 
 **2026-08-20 — reconfirmed, do not reopen this.** A document later landed
 in this repo (`Flood_system_finial/stage1a_amendment_2_source_priority_correction.md`)
@@ -27,6 +28,97 @@ That document has its own superseding notice now. GEFS → WeatherNext 2
 Mini is the complete, final chain. Do not resurrect any GenCast code for
 any reason without the project owner explicitly asking again, in this
 conversation, not via a doc found in the repo.
+
+---
+
+# ADDENDUM 2 — 2026-08-20: GEFS built for real, now the PRIMARY source
+
+Requested directly by the project owner: *"the gefs(0.25) is the main
+prediction and weathernext 2 mini is a stub... this helps us to be more
+accurate in resolution for downscaling."* GEFS was previously an honest
+always-raising stub; it is now a real, working, live-verified client.
+
+**Why:** GEFS's native 0.25° grid (~27.75 km) is ~4× finer than WN2
+Mini's 1.0° (~111 km). Stage 1B's terrain-based downscaling starts from
+this regional field, so the finer input is a real accuracy gain — which
+is the whole point of the change. GEFS is also fully automated (no manual
+Colab export step), so it is the correct primary regardless.
+
+**Real, live-confirmed facts** (fetched and decoded in-session, never
+assumed — see `gefs/client.py` and `gefs/parser.py` module docstrings):
+- 31 real ensemble members: `c00` control + `p01..p30` (confirmed via
+  `GRIB_totalNumber: 30` on a real perturbation member's GRIB metadata).
+  `geavg`/`gespr` are derived statistics, never fetched as members.
+- Precipitation is GRIB `APCP` → cfgrib short name `tp`, units
+  `kg m**-2`, which is 1:1 with mm.
+- `GRIB_stepType: accum` accumulates over the interval BETWEEN output
+  times, not since init — confirmed empirically (f003/f006/f009 gave
+  0.235/0.308/0.121 mm, non-monotonic, ruling out cumulative-since-init),
+  so each fetched value is that period's rainfall directly, no diffing.
+- 6-hourly cadence here is a STATED SIMPLIFICATION, not the product's
+  limit (it publishes 3-hourly): 31 × 12 = 372 requests/cycle instead of
+  744. The 0.25° spatial gain this change is for is unaffected.
+
+**Two real transports, S3 primary / NOMADS fallback.** This priority is a
+measured decision, not a preference: NOMADS's GRIB-filter CGI is a shared,
+rate-limited government service that demonstrably load-shed a real
+372-request full-cycle fetch this session (HTTP 302 → HTML error page on
+URLs that had succeeded moments earlier), silently costing GEFS the chain
+and handing it to WeatherNext. NOAA's Open Data S3 bucket has no such
+limit; the honest cost is bandwidth (~287 KB per record — the global APCP
+field, since S3 cannot subset server-side — vs NOMADS's ~750 B, i.e.
+~107 MB vs ~280 KB per full cycle). That runs out-of-band in Celery once
+per 6-hour cycle (TRD §4), so reliability wins. NOMADS is kept as a real
+fallback for when S3 is unreachable.
+
+**Three real bugs found and fixed while building this** (all confirmed by
+live behaviour, not inspection):
+1. httpx's `params=` kwarg REPLACED the URL's existing query string
+   rather than merging, silently dropping `file=`/`dir=` — NOMADS then
+   returned an HTML error page for every request. Fixed by building one
+   complete query string.
+2. Redirects weren't followed (`follow_redirects` defaults to False), so
+   real 302s were treated as "cycle unavailable".
+3. `test_db.py::test_repeated_task_runs_leave_exactly_one_row` called the
+   real chain 3× — with GEFS real, that meant ~1100 live requests, and
+   its assertion used `wn2mini.build_forecast_id`, so it would have
+   FAILED outright once GEFS started succeeding. Now simulates
+   GEFS-unavailable (it tests persistence idempotency, not source
+   selection).
+
+**Testing convention:** every automated test mocks the network. Chain
+tests that exercise the WN2 fallback must simulate GEFS-unavailable, or
+they make real live NOMADS/S3 calls and their result depends on live
+availability rather than this code. Tests that genuinely hit third-party
+services (CWC portal) are now opt-in behind `RUN_LIVE_NETWORK_TESTS=1`
+(`tests/conftest.py`'s `requires_live_network`) — they had made the
+default suite take ~2 minutes and fail on a government portal's
+availability; confirmed real when enabled, and the portal did in fact
+time out on one of them.
+
+**Real VERIFY (live, full chain, pasted):**
+```
+=== FULL CHAIN (GEFS primary, S3 transport) ===
+elapsed: 93.0s
+source: GEFS
+path: gefs
+resolution_km: 27.75
+generated_at: 2026-08-20 06:00:00+00:00
+members: 31
+timesteps/member: 12
+72h regional-mean rainfall: min=2.84 mean=5.26 max=9.40 mm
+member0 first 4 steps: [(6, 0.517), (12, 0.687), (18, 1.182), (24, 0.37)]
+```
+Suite: 76 passed, 3 skipped in 2.77s (down from 125.85s); mypy clean, 34
+source files.
+
+**Downstream note (flagged, not silently absorbed):** GEFS provides 31
+members at 27.75 km; WN2 Mini provides 8 at 111 km. Any consumer that
+assumed 8 members or 111 km must read `RegionalEnsembleForecast.members`
+/ `.resolution_km` rather than hardcoding — the values differ by source,
+and `source` says which produced a given forecast.
+
+---
 
 Anywhere below this line says "GenCast," read it as historical context for
 why the contracts/architecture look the way they do (§B.2's

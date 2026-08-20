@@ -210,14 +210,33 @@ def _wn2_shaped_dataset(num_members: int = 8) -> "xr.Dataset":
 @requires_postgres
 @requires_redis
 @pytest.mark.asyncio
-async def test_repeated_task_runs_leave_exactly_one_row(tmp_path: object) -> None:
-    """T1A.5 idempotency: three runs of the same window -> one row."""
+async def test_repeated_task_runs_leave_exactly_one_row(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T1A.5 idempotency: three runs of the same window -> one row.
+
+    GEFS is simulated unavailable so this exercises the WN2 Mini path
+    deterministically. Without it (2026-08-20 amendment made GEFS real
+    and primary) this test would make three real live NOMADS fetches --
+    ~372 network requests each, against T1A.12's own "mock all external
+    network calls" rule -- and would then assert against a `wn2mini-`
+    forecast_id that a successful GEFS run would never produce. The
+    behaviour under test is persistence idempotency, not source
+    selection; GEFS's own behaviour is covered in tests/test_gefs_*.py.
+    """
     from pathlib import Path
 
+    import stage1a.forecast.fallback as fallback_module
     from stage1a.config import Stage1ASettings
     from stage1a.forecast.tasks import generate_and_persist
+    from stage1a.gefs.errors import GEFSUnavailableError
     from stage1a.shared.contracts import BoundingBox
     from stage1a.wn2mini.parser import build_forecast_id
+
+    def _gefs_unavailable(*args: object, **kwargs: object) -> None:
+        raise GEFSUnavailableError("simulated: GEFS unavailable for this test")
+
+    monkeypatch.setattr(fallback_module, "fetch_gefs_forecast", _gefs_unavailable)
 
     bbox = BoundingBox(min_lat=12.5, max_lat=13.3, min_lon=78.8, max_lon=79.5)
     start = datetime(2026, 9, 1, tzinfo=timezone.utc)

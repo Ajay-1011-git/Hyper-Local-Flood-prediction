@@ -2,26 +2,21 @@
 
 from __future__ import annotations
 
-import socket
-
 import pytest
 
 from stage1a.cwc.client import KNOWN_RELEVANT_RESOURCES, fetch_station_data, fetch_station_list
 from stage1a.cwc.errors import CWCUnavailableError
+from stage1a.tests.conftest import requires_live_network
 
-
-def _portal_reachable() -> bool:
-    try:
-        socket.create_connection(("nwdp.nwic.gov.in", 443), timeout=5).close()
-        return True
-    except OSError:
-        return False
-
-
-requires_live_portal = pytest.mark.skipif(
-    not _portal_reachable(),
-    reason="National Water Data Portal not reachable from this environment",
-)
+#: These three tests make REAL calls to the National Water Data Portal.
+#: They are kept (they're genuine, and they're the only thing that proves
+#: the real CWC integration still works), but are now OPT-IN rather than
+#: "run whenever the portal happens to be reachable" — they dominated the
+#: default suite's runtime (~2 min) and their result depended on a
+#: government portal's live availability rather than on this code. See
+#: `tests/conftest.py`'s `requires_live_network` for the rationale and how
+#: to run them (`RUN_LIVE_NETWORK_TESTS=1 pytest tests/`).
+requires_live_portal = requires_live_network
 
 
 def test_known_resources_are_documented() -> None:

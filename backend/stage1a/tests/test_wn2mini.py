@@ -170,29 +170,41 @@ def test_forecast_id_is_namespaced() -> None:
     assert wn2_id(TN_BBOX, FORECAST_START).startswith("wn2mini-")
 
 
-# -------------------------------------------------------------- gefs stub
-
-
-def test_gefs_always_raises_unavailable() -> None:
-    from stage1a.gefs.client import fetch_gefs_forecast
-    from stage1a.gefs.errors import GEFSUnavailableError
-
-    with pytest.raises(GEFSUnavailableError):
-        fetch_gefs_forecast(TN_BBOX, FORECAST_START)
-
-
 # --------------------------------------------------------- full chain (T1A.4)
+#
+# 2026-08-20 amendment: GEFS is now real (see gefs/client.py) and tried
+# first, so every chain test below must simulate "GEFS unavailable" to
+# reach and test the WN2 Mini fallback path deterministically -- without
+# this, these tests would make real live NOMADS network calls (against
+# T1A.12's own "mock all external network calls in automated tests"
+# rule) and their outcome would depend on live GEFS availability rather
+# than the WN2/chain logic actually under test. The old
+# `test_gefs_always_raises_unavailable` (testing the pre-amendment stub
+# that always raised) no longer applies -- GEFS's real behavior is
+# covered in tests/test_gefs_client.py and tests/test_gefs_parser.py
+# instead.
 
 
 def _settings_with_wn2_path(path: object) -> Stage1ASettings:
     return Stage1ASettings(wn2_mini_forecast_path=path)  # type: ignore[arg-type]
 
 
+def _simulate_gefs_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    import stage1a.forecast.fallback as fallback_module
+    from stage1a.gefs.errors import GEFSUnavailableError
+
+    def _raise(*args: object, **kwargs: object) -> None:
+        raise GEFSUnavailableError("simulated: GEFS unavailable for this test")
+
+    monkeypatch.setattr(fallback_module, "fetch_gefs_forecast", _raise)
+
+
 @requires_real_wn2_file
-def test_chain_serves_wn2_mini_when_present() -> None:
+def test_chain_serves_wn2_mini_when_gefs_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     from stage1a.forecast.fallback import get_regional_forecast
     from stage1a.forecast.provenance import ForecastPath
 
+    _simulate_gefs_unavailable(monkeypatch)
     result = get_regional_forecast(
         TN_BBOX, FORECAST_START, _settings_with_wn2_path(REAL_FILE)
     )
@@ -201,23 +213,54 @@ def test_chain_serves_wn2_mini_when_present() -> None:
     assert result.forecast.source == "WeatherNext2_Cyclones_Mini"
 
 
-def test_chain_raises_when_nothing_is_available(tmp_path: Path) -> None:
-    """GenCast was removed outright -- WN2 Mini missing means nothing is left."""
+def test_chain_raises_when_nothing_is_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """GenCast was removed outright -- GEFS down + WN2 Mini missing means nothing is left."""
     from stage1a.forecast.errors import NoRegionalForecastAvailableError
     from stage1a.forecast.fallback import get_regional_forecast
 
+    _simulate_gefs_unavailable(monkeypatch)
     settings = Stage1ASettings(wn2_mini_forecast_path=tmp_path / "no_such_file.nc")
     with pytest.raises(NoRegionalForecastAvailableError):
         get_regional_forecast(TN_BBOX, FORECAST_START, settings)
 
 
-def test_wn2_parse_errors_are_not_masked_by_the_chain(tmp_path: Path) -> None:
+def test_wn2_parse_errors_are_not_masked_by_the_chain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A malformed WN2 file must surface as WN2ParseError, not fall through."""
     from stage1a.forecast.fallback import get_regional_forecast
     from stage1a.wn2mini.errors import WN2ParseError
 
+    _simulate_gefs_unavailable(monkeypatch)
     path = tmp_path / "broken.nc"
     wn2_shaped_dataset(num_members=3).to_netcdf(path, engine="h5netcdf")
 
     with pytest.raises(WN2ParseError):
         get_regional_forecast(TN_BBOX, FORECAST_START, _settings_with_wn2_path(path))
+
+
+@requires_real_wn2_file
+def test_chain_prefers_gefs_over_wn2_mini_when_both_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-08-20 amendment: GEFS is now primary. With both sources
+    mocked/present as available, GEFS must win -- WN2 Mini is never even
+    attempted (its file existing is irrelevant to the outcome here)."""
+    import stage1a.forecast.fallback as fallback_module
+    from stage1a.forecast.fallback import get_regional_forecast
+    from stage1a.forecast.provenance import ForecastPath, ForecastProvenance, RegionalForecastResult
+    from stage1a.gefs.parser import build_regional_ensemble_forecast, GEFS_MEMBERS
+    from datetime import datetime as dt, timezone as tz
+
+    fake_forecast = build_regional_ensemble_forecast(
+        {m: {6: 1.0} for m in GEFS_MEMBERS}, TN_BBOX, FORECAST_START
+    )
+    fake_result = RegionalForecastResult(
+        forecast=fake_forecast,
+        provenance=ForecastProvenance(
+            path=ForecastPath.GEFS, retrieved_at=dt.now(tz.utc), synthetic=False
+        ),
+    )
+    monkeypatch.setattr(fallback_module, "fetch_gefs_forecast", lambda *a, **k: fake_result)
+
+    result = get_regional_forecast(
+        TN_BBOX, FORECAST_START, _settings_with_wn2_path(REAL_FILE)
+    )
+    assert result.provenance.path is ForecastPath.GEFS
+    assert result.forecast.source == "GEFS"

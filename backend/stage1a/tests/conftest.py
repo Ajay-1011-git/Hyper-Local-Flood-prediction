@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import AsyncIterator
 
 import pytest
@@ -56,6 +57,29 @@ def _redis_reachable() -> bool:
             await client.aclose()
 
     return asyncio.run(_check())
+
+
+#: Opt-in gate for tests that make REAL calls to third-party services
+#: (the National Water Data Portal, NOAA NOMADS, ...).
+#:
+#: 2026-08-20: made opt-in rather than "run whenever the host happens to be
+#: reachable". Those tests are real and worth keeping — but they made the
+#: default suite take ~2 minutes, and their outcome depended on a
+#: government portal's live availability rather than on this project's own
+#: code, which is exactly what T1A.12's "mock all external network calls in
+#: automated tests" rule exists to avoid. Local infrastructure (PostgreSQL,
+#: Redis) is NOT gated this way — it's this project's own stack, not a
+#: third party, and `requires_postgres`/`requires_redis` below still probe
+#: it directly.
+#:
+#: Run them explicitly with:
+#:     RUN_LIVE_NETWORK_TESTS=1 pytest tests/
+_LIVE_NETWORK_TESTS_ENABLED = os.getenv("RUN_LIVE_NETWORK_TESTS") == "1"
+
+requires_live_network = pytest.mark.skipif(
+    not _LIVE_NETWORK_TESTS_ENABLED,
+    reason="Live third-party network tests are opt-in; set RUN_LIVE_NETWORK_TESTS=1 to run them",
+)
 
 
 requires_postgres = pytest.mark.skipif(
