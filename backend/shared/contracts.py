@@ -198,6 +198,27 @@ class NodeState(BaseModel):
     # never a placeholder"). Fraction of ensemble members exceeding a
     # configurable hazard threshold at this node/hour (stage2 T2.7).
 
+    building_id: Optional[str] = None  # UNCONFIRMED addition, added while implementing
+    # stage3 T3.5, not by original doc citation — flagged for explicit user
+    # sign-off (recorded 2026-08-20). Real gap: stage2 doc T2.1 confirms
+    # `ComputationalMeshNode.building_id` IS set for wall nodes ("set if
+    # is_wall_node is True"), but `ComputationalMeshNode` is Stage-2-internal
+    # (see note above `AnchorPoint`: "no downstream stage doc lists it as a
+    # cross-stage import") — so as drafted, NodeState/SimulationResult (what
+    # Stage 3 actually receives) carried no way to group hazard by
+    # structure at all. `rank_structures` (T3.5) needs exactly this link.
+    # This mirrors ComputationalMeshNode's real, confirmed field name/
+    # semantics (not invented from nothing) but its presence on NodeState
+    # specifically is NOT yet confirmed against Stage 2's actual T2.6/T2.7
+    # output — MUST be corrected once Stage 2 is real. None for
+    # non-wall/non-road-adjacent nodes (most of the mesh).
+    road_segment_id: Optional[str] = None  # UNCONFIRMED, same reasoning as
+    # building_id above, extended to roads by analogy — stage2 doc's T2.1
+    # only confirms the building_id tagging explicitly; road-node tagging
+    # is this project's own inference, not cited from any doc. At most one
+    # of building_id/road_segment_id is set per node; both None for open
+    # terrain/water nodes with no structure overlap.
+
 
 class SimulationResult(BaseModel):
     """Stage 2's full simulation output for one site, one forecast run."""

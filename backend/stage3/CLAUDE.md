@@ -92,3 +92,15 @@ UNCONFIRMED fields as if they were settled.** Confirm the real shape once
 Stage 2's T2.6 (GNN)/T2.7 (ensemble aggregation) actually exists and
 produces real output — or get it confirmed directly by whoever builds
 Stage 2, in `backend/shared/contracts.py`, before depending on it.
+
+### Added during T3.5 (2026-08-20) — `NodeState.building_id` / `road_segment_id`
+
+T3.5's `rank_structures` needs to group hazard by structure, but
+`NodeState` as drafted had no such link — `ComputationalMeshNode` (which
+Stage 2's own doc confirms carries `building_id` for wall nodes) is
+Stage-2-internal, never passed downstream. Added `building_id: Optional[str]`
+and `road_segment_id: Optional[str]` to `NodeState` to close this gap,
+with explicit user sign-off. Same caveat as everything else in this
+section: UNCONFIRMED against Stage 2's real output, must be corrected
+once Stage 2 exists — Ajay may instead expose `ComputationalMeshNode`
+itself downstream, or use different field names.
