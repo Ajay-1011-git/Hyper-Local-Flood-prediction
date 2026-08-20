@@ -13,21 +13,30 @@ Per this task's own explicit instruction ("confirm with Stage 2/3's
 actual code whether this already exists before building a duplicate"):
 it does, twice. `backend/stage1b/routes.py` and `backend/stage2/routes.py`
 each already implement `/ws/site/{site_id}`, each its own separate
-process/`ConnectionManager` (Stage 1B relays sensor readings; Stage 2
-relays `simulation_update` + `sensor_assimilated`). Building a THIRD one
-here would be exactly the duplicate this task warns against, so this
-file does not.
+process/`ConnectionManager`. Building a THIRD one here would be exactly
+the duplicate this task warns against, so this file does not.
 
 **Real, unresolved gap, documented honestly rather than silently assumed
 solved** (Stage 2's own `routes.py` docstring already admits the same
-thing): which single WebSocket endpoint the frontend should actually
-connect to, given 3 independent processes each with only a partial view
-of the event stream — and Stage 3's `ranking_update` event (per §B.2's
-contract) has no emitter anywhere yet either, since `damage-ranking`'s
-own route (T3.6) is a plain REST endpoint, not a broadcaster. A real
-deployment needs one gateway process or a shared Redis pub/sub (per
-TRD's own note on multi-worker broadcast). Flagged here for whoever
-builds the frontend's WebSocket client (T4B.1) to resolve.
+thing about WebSocket duplication): which single WebSocket endpoint the
+frontend should actually connect to, given 2 independent processes each
+with only a partial view of the event stream. Checked precisely during
+T4B.1 (correcting an earlier, wrong claim in this same docstring that
+Stage 2 relays `simulation_update` — it does not): as of 2026-08-20,
+`sensor_assimilated` is the ONLY event either process ever actually
+broadcasts (`grep -rn '"type"'` across the real code, not the contract
+comments, confirms this). `simulation_update` and `ranking_update` (per
+§B.2's contract) have no emitter anywhere in this repo — Stage 2 never
+broadcasts after a `set_site_state()` precompute run, and Stage 3's
+`damage-ranking` route (T3.6) is a plain REST endpoint, not a
+broadcaster. A real deployment needs one gateway process or a shared
+Redis pub/sub (per TRD's own note on multi-worker broadcast), AND
+someone to actually call `connection_manager.broadcast()` after a
+simulation/ranking update, not just after sensor assimilation. Flagged
+here for whoever builds the frontend's WebSocket client (T4B.1) to
+design around — the 3D scene's INITIAL state must come from the real
+REST endpoints (already wired in T4B.0's `api/client.ts`), not from a
+`simulation_update` WS event that will never arrive.
 
 ## Sources, mirroring Stage 3's own established pattern
 
