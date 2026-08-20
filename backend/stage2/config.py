@@ -35,6 +35,7 @@ class Stage2Settings(BaseSettings):
     dem_source: str = "stage1b"
     mswe_gnn_pretrained_path: Optional[str] = None
     terrain_grid_resolution_m: float = 1.0
+    torch_device_preference: str = "mps"  # T2.6 amendment; see gnn/device.py
 
     database_url: str = "postgresql://localhost:5432/floodsystem"
     redis_url: str = "redis://localhost:6379/0"

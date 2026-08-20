@@ -28,3 +28,11 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = ["trimesh.*", "pygltflib.*", "rasterio.*", "torch_geometric.*", "shapely.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Vendored third-party code (RBTV1/mSWE-GNN, MIT license -- see
+# gnn/vendor/mswe_gnn/LICENSE), kept as close to byte-identical to the
+# original as the one documented trim allows. Not held to this project's
+# own strict typing rules, same as any external dependency.
+module = ["stage2.gnn.vendor.mswe_gnn.*"]
+ignore_errors = true
