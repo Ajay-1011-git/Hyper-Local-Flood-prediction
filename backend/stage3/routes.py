@@ -8,28 +8,37 @@ Redis thereafter.
 ## identical "no live upstream endpoint exists yet" situation)
 
 1. **SimulationResult source.** Stage 2's real, documented endpoint is
-   `GET /api/simulation/site/{site_id}` (stage2 build doc T2.9) -- no live
-   deployment of it exists in this repo yet (Ajay's Stage 2 is still in
-   progress as of 2026-08-20). If `STAGE2_SIMULATION_RESULT_BASE_URL` is
-   configured, this route fetches and validates a real `SimulationResult`
-   from `{base_url}/{site_id}`; otherwise (or on fetch failure) it falls
-   back to an explicitly-labeled mock fixture, deterministic per
-   `site_id` (so repeated requests are idempotent -- same `simulation_id`,
-   same cache key) -- exactly Stage 1B's `_mock_regional_forecast()`
-   pattern for Stage 1A before it went live. Which path was used is
-   exposed via `X-Simulation-Source` (`stage2_live` | `mock_dev_fixture`).
+   `GET /api/simulation/site/{site_id}` (stage2 build doc T2.9) -- Stage 2
+   is now real and built (2026-08-20), but its precompute pipeline is
+   Celery-orchestrated and out of Stage 2's own T2.9 scope, so no
+   deployment with a seeded site is guaranteed to be running at any given
+   moment. If `STAGE2_SIMULATION_RESULT_BASE_URL` is configured AND a live
+   server is reachable AND seeded for the requested `site_id`, this route
+   fetches and validates a real `SimulationResult` from
+   `{base_url}/{site_id}`; otherwise (unset, unreachable, or 404 — not
+   seeded yet) it falls back to an explicitly-labeled mock fixture,
+   deterministic per `site_id` (so repeated requests are idempotent --
+   same `simulation_id`, same cache key) -- exactly Stage 1B's
+   `_mock_regional_forecast()` pattern for Stage 1A before it went live.
+   Which path was used is exposed via `X-Simulation-Source`
+   (`stage2_live` | `mock_dev_fixture`).
 
 2. **Building/road-segment geometry source.** `rank_structures` (T3.5)
    also needs `BuildingFootprint`/`RoadSegment` lists. Stage 2's build doc
-   defines NO endpoint that serves these at all (only the two T2.9 routes
+   still defines NO endpoint that serves these (only the two T2.9 routes
    above exist) -- checked directly against that doc, not assumed absent.
-   Real footprint data doesn't exist anywhere yet either: the actual
-   Blender/GLB model of the demo site's buildings was still being
-   produced by the team as of this writing. `_demo_site_geometry()` below
-   is therefore an explicitly-labeled PLACEHOLDER (small illustrative
-   rectangles/lines, not real surveyed coordinates), standing in only
-   until Stage 2 defines and exposes a real footprint-serving mechanism.
-   Must be replaced, not silently trusted as real geometry.
+   RESOLVED 2026-08-20 (found during a full-system wiring audit): the
+   real GLB model and its anchor data are now present locally, and Stage
+   2's own real extraction functions (T2.1/T2.3, plus the new
+   `road_segmentation.py` from this same audit) can derive real geometry
+   from them directly -- see `demo_site/real_geometry.py`'s module
+   docstring for the full reasoning (a direct cross-import of Stage 2's
+   functions, not an HTTP call, mirroring the same-direction precedent
+   already established by Stage 2 reading Stage 1B's DB directly). Falls
+   back to a small, explicitly-labeled placeholder only if the real GLB
+   isn't present locally (e.g. a fresh clone without the gitignored
+   data) -- exposed via `X-Geometry-Source` (`real_glb` |
+   `placeholder_fallback`).
 
 ## Caching
 
@@ -52,15 +61,17 @@ from fastapi import FastAPI, HTTPException, Response
 
 from backend.stage3.config import settings
 from backend.stage3.db import get_redis_client
+from backend.stage3.demo_site.real_geometry import (
+    load_real_demo_site_geometry,
+    placeholder_demo_site_geometry,
+)
 from backend.stage3.ranking.risk_ranking import (
     NoMatchingNodesForStructureError,
     rank_structures,
 )
 from backend.stage3.shared.contracts import (
-    BuildingFootprint,
     DamageRankEntry,
     NodeState,
-    RoadSegment,
     SimulationResult,
 )
 
@@ -76,12 +87,15 @@ app = FastAPI(title="Stage 3 — Damage Ranking")
 
 def _mock_simulation_result(site_id: str) -> SimulationResult:
     """An explicitly-labeled MOCK SimulationResult, standing in for Stage
-    2's not-yet-deployed live endpoint. Deterministic per `site_id` (a
-    fixed `simulation_id`) so repeated requests are idempotent -- not a
-    fresh random result each time. Node states are tagged with
-    `building_id`/`road_segment_id` matching `_demo_site_geometry()`'s
-    structure ids, since both must agree for `rank_structures` to find
-    any nodes at all."""
+    2's not-yet-seeded/unreachable live endpoint. Deterministic per
+    `site_id` (a fixed `simulation_id`) so repeated requests are
+    idempotent -- not a fresh random result each time. Node states are
+    tagged with `building_id`/`road_segment_id` matching Stage 2's REAL
+    ids (`Building_01`/`Building_02` -- `Building_03` no longer exists in
+    the real site per Stage 2's own confirmed 2026-08-20 ground truth;
+    `Road_Segment_000` matches `road_segmentation.py`'s real zero-padded
+    naming), so this mock stays consistent with `real_geometry.py`'s
+    structure ids even when Stage 2 itself isn't reachable."""
     node_states = [
         NodeState(
             node_id="mock_b1_n1", hour=24, depth_mean_m=0.9, depth_min_m=0.7,
@@ -96,16 +110,10 @@ def _mock_simulation_result(site_id: str) -> SimulationResult:
             building_id="Building_02",
         ),
         NodeState(
-            node_id="mock_b3_n1", hour=18, depth_mean_m=0.3, depth_min_m=0.2,
-            depth_max_m=0.4, velocity_mean_mps=0.2, velocity_min_mps=0.1,
-            velocity_max_mps=0.3, rate_of_rise=0.02, ensemble_agreement_fraction=0.9,
-            building_id="Building_03",
-        ),
-        NodeState(
             node_id="mock_r1_n1", hour=24, depth_mean_m=0.5, depth_min_m=0.4,
             depth_max_m=0.6, velocity_mean_mps=0.6, velocity_min_mps=0.4,
             velocity_max_mps=0.8, rate_of_rise=0.05, ensemble_agreement_fraction=0.75,
-            road_segment_id="Road_Segment_01",
+            road_segment_id="Road_Segment_000",
         ),
     ]
 
@@ -141,39 +149,6 @@ def _get_simulation_result(site_id: str) -> tuple[SimulationResult, str]:
 
 
 # ---------------------------------------------------------------------------
-# Gap #2: building/road-segment geometry source (see module docstring)
-# ---------------------------------------------------------------------------
-
-
-def _demo_site_geometry() -> tuple[list[BuildingFootprint], list[RoadSegment]]:
-    """PLACEHOLDER geometry, NOT real surveyed coordinates -- see module
-    docstring's Gap #2. Structure ids match `_mock_simulation_result`'s
-    `building_id`/`road_segment_id` tags."""
-    footprints = [
-        BuildingFootprint(
-            building_id="Building_01",
-            footprint_polygon=[[0, 0], [10, 0], [10, 10], [0, 10]],
-        ),
-        BuildingFootprint(
-            building_id="Building_02",
-            footprint_polygon=[[20, 0], [35, 0], [35, 12], [20, 12]],
-        ),
-        BuildingFootprint(
-            building_id="Building_03",
-            footprint_polygon=[[45, 0], [52, 0], [52, 6], [45, 6]],
-        ),
-    ]
-    road_segments = [
-        RoadSegment(
-            segment_id="Road_Segment_01",
-            polyline=[[0, 20], [40, 20]],
-            width_m=7.0,
-        ),
-    ]
-    return footprints, road_segments
-
-
-# ---------------------------------------------------------------------------
 # T3.6 — GET /api/damage-ranking/{site_id}
 # ---------------------------------------------------------------------------
 
@@ -191,7 +166,23 @@ async def get_damage_ranking(site_id: str, response: Response) -> list[DamageRan
         response.headers["X-Cache"] = "hit-redis"
         return [DamageRankEntry.model_validate(entry) for entry in json.loads(cached)]
 
-    footprints, road_segments = _demo_site_geometry()
+    # Geometry source is deliberately coupled to the simulation source,
+    # not independently chosen: the mock SimulationResult only tags a
+    # small, fixed set of structure ids (Building_01/02, one road
+    # segment) -- real geometry has 2 real buildings but 41 real road
+    # segments (see real_geometry.py's module docstring), which the mock
+    # fixture doesn't cover. Mixing a real 41-segment geometry set with
+    # the mock's 1-segment simulation would make every uncovered real
+    # segment raise NoMatchingNodesForStructureError -- a real,
+    # previously-hit bug during this fix's own development, not a
+    # hypothetical. Using placeholder geometry alongside the mock
+    # simulation keeps the two honestly paired.
+    if sim_source == "stage2_live":
+        (footprints, road_segments), geometry_source = load_real_demo_site_geometry()
+    else:
+        footprints, road_segments = placeholder_demo_site_geometry()
+        geometry_source = "placeholder_fallback"
+
     try:
         entries = rank_structures(sim_result, footprints, road_segments)
     except NoMatchingNodesForStructureError as exc:
@@ -201,5 +192,6 @@ async def get_damage_ranking(site_id: str, response: Response) -> list[DamageRan
     await redis.set(cache_key, json.dumps(payload), ex=settings.damage_ranking_cache_ttl_seconds)
 
     response.headers["X-Simulation-Source"] = sim_source
+    response.headers["X-Geometry-Source"] = geometry_source
     response.headers["X-Cache"] = "miss"
     return entries

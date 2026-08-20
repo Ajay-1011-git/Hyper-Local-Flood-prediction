@@ -4,12 +4,14 @@ Real integration tests against actual local Redis (same philosophy as
 Stage 1B's test_routes.py: this route genuinely needs it, and it's local
 infrastructure, not a third-party network call).
 
-Stage 2 is not mocked via a fake server -- there is no live Stage 2
-endpoint anywhere (Ajay's Stage 2 doesn't exist in this repo yet), so the
-route's real, documented behavior today is its mock-fixture fallback
-path. Tests for the "Stage 2 IS configured" branch monkeypatch
-`requests.get` directly, which is the one real external call this route
-makes.
+Stage 2 is not mocked via a fake server for the "not configured" path --
+the route's real, documented behavior there is its mock-fixture fallback.
+Tests for the "Stage 2 IS configured" branch monkeypatch `requests.get`
+directly (the one real external call this route makes) AND
+`load_real_demo_site_geometry` (so these tests never depend on the real,
+gitignored GLB file actually being present on the machine running them --
+matches this project's established discipline of never letting automated
+tests depend on non-committed real data).
 
 Uses `httpx.AsyncClient` + `ASGITransport`, not `TestClient`, for the same
 event-loop reason as Stage 1B's test_routes.py (see this stage's
@@ -30,7 +32,7 @@ from backend.stage3 import routes
 from backend.stage3.config import settings
 from backend.stage3.db import get_redis_client
 from backend.stage3.routes import app
-from backend.stage3.shared.contracts import NodeState, SimulationResult
+from backend.stage3.shared.contracts import BuildingFootprint, NodeState, RoadSegment, SimulationResult
 
 
 @pytest.fixture(autouse=True)
@@ -45,18 +47,27 @@ async def _clean_redis():
 
 
 async def test_mock_fixture_path_used_when_stage2_not_configured():
-    assert settings.stage2_simulation_result_base_url is None  # real .env.example default
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/api/damage-ranking/test_site_01")
+    # Explicitly forced to None rather than asserted as the ambient
+    # default: a real local .env may legitimately set
+    # STAGE2_SIMULATION_RESULT_BASE_URL for live-wiring use (as this
+    # project's own does) -- this test exercises the "unconfigured"
+    # branch specifically, not whatever happens to be in the environment
+    # running it.
+    with patch.object(settings, "stage2_simulation_result_base_url", None):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/damage-ranking/test_site_01")
 
     assert resp.status_code == 200
     assert resp.headers["X-Simulation-Source"] == "mock_dev_fixture"
+    assert resp.headers["X-Geometry-Source"] == "placeholder_fallback"
     assert resp.headers["X-Cache"] == "miss"
 
     entries = resp.json()
     structure_ids = {e["structure_id"] for e in entries}
-    assert structure_ids == {"Building_01", "Building_02", "Building_03", "Road_Segment_01"}
+    # Building_03 no longer exists in the real site (Stage 2's own
+    # confirmed 2026-08-20 ground truth) -- the mock/placeholder pairing
+    # must reflect that, not a stale 3-building assumption.
+    assert structure_ids == {"Building_01", "Building_02", "Road_Segment_000"}
 
 
 async def test_second_request_is_served_from_redis_cache():
@@ -92,12 +103,12 @@ async def test_cache_hit_skips_recomputation():
 async def test_ranked_output_reflects_real_hazard_differences():
     """Sanity check against the mock fixture's own designed story:
     Building_02 (deeper, faster in the mock fixture) should outrank
-    Building_03 (shallow, slow)."""
+    Building_01 (shallower, slower)."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/api/damage-ranking/test_site_04")
 
     entries = {e["structure_id"]: e for e in resp.json()}
-    assert entries["Building_02"]["risk_score"] > entries["Building_03"]["risk_score"]
+    assert entries["Building_02"]["risk_score"] > entries["Building_01"]["risk_score"]
     ranks = sorted(entries.values(), key=lambda e: e["rank"])
     assert [e["risk_score"] for e in ranks] == sorted(
         (e["risk_score"] for e in ranks), reverse=True
@@ -126,20 +137,29 @@ def _fake_live_simulation_result(site_id: str) -> SimulationResult:
                 building_id="Building_02",
             ),
             NodeState(
-                node_id="live_b3_n1", hour=24, depth_mean_m=1.0, depth_min_m=0.8,
-                depth_max_m=1.2, velocity_mean_mps=0.5, velocity_min_mps=0.4,
-                velocity_max_mps=0.6, rate_of_rise=0.05, ensemble_agreement_fraction=0.8,
-                building_id="Building_03",
-            ),
-            NodeState(
                 node_id="live_r1_n1", hour=24, depth_mean_m=1.0, depth_min_m=0.8,
                 depth_max_m=1.2, velocity_mean_mps=0.5, velocity_min_mps=0.4,
                 velocity_max_mps=0.6, rate_of_rise=0.05, ensemble_agreement_fraction=0.8,
-                road_segment_id="Road_Segment_01",
+                road_segment_id="Road_Segment_000",
             ),
         ],
         envelope={},
     )
+
+
+def _fake_live_geometry():
+    """A small, controlled geometry set matching `_fake_live_simulation_result`'s
+    tags exactly -- deliberately NOT the real GLB (see module docstring:
+    live-stage2 tests must not depend on real, gitignored data being
+    present)."""
+    footprints = [
+        BuildingFootprint(building_id="Building_01", footprint_polygon=[[0, 0], [10, 0], [10, 10], [0, 10]]),
+        BuildingFootprint(building_id="Building_02", footprint_polygon=[[20, 0], [30, 0], [30, 10], [20, 10]]),
+    ]
+    road_segments = [
+        RoadSegment(segment_id="Road_Segment_000", polyline=[[0, 20], [20, 20]], width_m=7.0),
+    ]
+    return (footprints, road_segments), "real_glb"
 
 
 class _FakeResponse:
@@ -162,12 +182,14 @@ async def test_uses_live_stage2_source_when_configured_and_reachable():
 
     with patch.object(settings, "stage2_simulation_result_base_url", "http://fake-stage2/api/simulation/site"):
         with patch.object(routes.requests, "get", side_effect=_fake_get):
-            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-                resp = await client.get("/api/damage-ranking/test_site_05")
+            with patch.object(routes, "load_real_demo_site_geometry", side_effect=_fake_live_geometry):
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                    resp = await client.get("/api/damage-ranking/test_site_05")
 
     assert resp.headers["X-Simulation-Source"] == "stage2_live"
+    assert resp.headers["X-Geometry-Source"] == "real_glb"
     entries = {e["structure_id"] for e in resp.json()}
-    assert entries == {"Building_01", "Building_02", "Building_03", "Road_Segment_01"}
+    assert entries == {"Building_01", "Building_02", "Road_Segment_000"}
 
 
 async def test_falls_back_to_mock_when_stage2_configured_but_unreachable():
@@ -181,6 +203,7 @@ async def test_falls_back_to_mock_when_stage2_configured_but_unreachable():
 
     assert resp.status_code == 200
     assert resp.headers["X-Simulation-Source"] == "mock_dev_fixture"
+    assert resp.headers["X-Geometry-Source"] == "placeholder_fallback"
 
 
 async def test_missing_hazard_data_for_a_structure_returns_503_not_a_crash():
@@ -188,8 +211,6 @@ async def test_missing_hazard_data_for_a_structure_returns_503_not_a_crash():
     (a real, previously-caught bug class), the route must fail loudly
     (503) rather than silently drop the mismatched structure or crash
     with an unhandled exception."""
-    from backend.stage3.shared.contracts import BuildingFootprint
-
     bad_footprints = [
         BuildingFootprint(
             building_id="Building_does_not_exist_in_any_simulation",
@@ -197,7 +218,7 @@ async def test_missing_hazard_data_for_a_structure_returns_503_not_a_crash():
         )
     ]
 
-    with patch.object(routes, "_demo_site_geometry", return_value=(bad_footprints, [])):
+    with patch.object(routes, "placeholder_demo_site_geometry", return_value=(bad_footprints, [])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/damage-ranking/test_site_07")
 

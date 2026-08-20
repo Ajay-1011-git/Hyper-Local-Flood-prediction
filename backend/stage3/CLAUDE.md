@@ -7,10 +7,15 @@ geometry as exposure, and a published fragility/depth-damage curve as
 vulnerability. Outputs a ranked list with a confidence value per entry.
 
 ## GROUND TRUTH (never change without explicit human instruction)
-- Only 3 buildings exist in this project's demo site: Building_01/02/03,
-  per Stage 2's `BuildingFootprint` contract. Do not assume more buildings
-  exist or generalize to an arbitrary count without checking Stage 2's
-  actual output first.
+- CORRECTED 2026-08-20 (full-system wiring audit, checked directly against
+  the real GLB): only **2** buildings exist in the real demo site —
+  `Building_01`/`Building_02`. `Building_03` was in the original design
+  but was replaced with garden/lawn/road assets in the real 3D model
+  (confirmed in Stage 2's own `CLAUDE.md`/`ingestion/glb_loader.py` —
+  `REQUIRED_OBJECT_NAMES = ("Building_01", "Building_02", "Road_Network")`).
+  Do not re-add a third building or generalize to an arbitrary count
+  without re-checking Stage 2's actual `REQUIRED_OBJECT_NAMES`/real
+  output first — this has already changed once.
 - Hazard signal is depth AND velocity AND rate-of-rise together — never
   rank by depth alone. This is a explicit, non-negotiable project decision
   (established because depth-only ranking underestimates damage from fast,
