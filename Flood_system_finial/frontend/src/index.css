@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/*
+ * Two visual registers, per the User Flow document's explicit design
+ * split (§3.2 dark ops dashboard vs §3.5 light, high-contrast citizen
+ * view). Defined as real CSS variables here so both registers stay
+ * consistent across pages rather than being re-picked per component.
+ *
+ * The four-state severity palette (User Flow §1) is the one shared
+ * vocabulary between them — same meaning in both registers, different
+ * surrounding chrome.
+ */
+:root {
+  /* Four-state severity palette, shared by both registers */
+  --sev-normal: #2f855a;
+  --sev-advisory: #b7791f;
+  --sev-warning: #c05621;
+  --sev-critical: #c53030;
+
+  /* Ops dashboard (dark register) */
+  --ops-bg: #0b0f14;
+  --ops-panel: #141a22;
+  --ops-border: #232c38;
+  --ops-text: #e6edf3;
+  --ops-text-dim: #9aa7b4;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

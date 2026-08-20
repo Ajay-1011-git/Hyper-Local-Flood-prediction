@@ -1,0 +1,28 @@
+# Versions pinned to latest stable on PyPI as of 2026-08-20 (confirmed
+# in-session earlier the same day, reused here rather than re-checked --
+# per this project's convention of resolving real versions, not guessing).
+fastapi==0.141.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+sqlalchemy==2.0.52
+asyncpg==0.31.0
+greenlet==3.5.5                # required by SQLAlchemy's async engine
+redis==8.1.0
+requests==2.34.2
+httpx==0.28.1                  # required by FastAPI's TestClient / AsyncClient
+uvicorn==0.52.4
+
+pytest==9.1.1
+pytest-asyncio==1.4.0
+mypy==2.3.1
+
+
+# T4A.1: confirmed real CAP 1.2 schema needs real XSD-validation
+# capability (not just string generation) -- lxml.etree supports
+# XMLSchema validation directly, stdlib xml.etree does not.
+# ---- T4B.3: terrain heightmap proxy (reads Stage 1B's real DEM GeoTIFF) ----
+rasterio==1.5.1                # same pin Stage 1B/2 use for this exact raster
+numpy==2.5.2
+
+lxml==6.1.2
+lxml-stubs==0.5.1

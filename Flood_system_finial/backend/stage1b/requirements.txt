@@ -1,0 +1,34 @@
+# Versions pinned to latest stable on PyPI as of 2026-08-19 (verified via
+# `pip index versions <pkg>` in-session per T1B.0's anti-hallucination rule).
+fastapi==0.141.1
+uvicorn==0.52.4
+httpx==0.28.1               # required by FastAPI's TestClient
+websockets==17.0.1           # T1B.11 WebSocket test client
+psycopg2-binary==2.9.12      # T1B.11 tests' sync DB checks (subprocess-server tests can't share the app's async engine)
+types-psycopg2==2.9.21.20260724
+pydantic==2.13.4
+pydantic-settings==2.15.0
+sqlalchemy==2.0.52
+rasterio==1.5.1
+requests==2.34.2
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0            # T1B.12 coverage audit
+mypy==2.3.1
+
+# Additional deps this module will need per §B.3 (not yet exercised by any
+# task, pinned now so `pip install` is reproducible from T1B.0 onward):
+redis==8.1.0               # Redis client
+numpy==2.5.2                # terrain grid math (T1B.3)
+pandas==3.0.5                # TN WRD CSV parsing (T1B.4)
+
+# T1B.1 — DB layer. asyncpg chosen over psycopg2 per CLAUDE.md's fixed
+# "FastAPI (async)" stack requirement: SQLAlchemy's async engine needs an
+# async-capable driver, which psycopg2 is not.
+asyncpg==0.31.0             # async PostgreSQL driver for SQLAlchemy
+geoalchemy2==0.20.0          # PostGIS geometry column support for SQLAlchemy
+greenlet==3.5.5              # required by SQLAlchemy's async engine (greenlet_spawn)
+
+# T1B.4 — pandas ships no type stubs of its own; pandas-stubs is the real,
+# current package for it (not py.typed).
+pandas-stubs==3.0.5.260730

@@ -1,0 +1,54 @@
+# Stage 1A — pinned dependencies.
+# Every version below was resolved from PyPI's JSON API in-session
+# (https://pypi.org/pypi/<pkg>/json), not recalled from memory.
+# Target interpreter: CPython 3.13.
+
+# ---- API layer (TRD §3.2: FastAPI, async) ----
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+
+# ---- Validation / config (TRD §7: Pydantic at every external boundary) ----
+pydantic==2.13.4
+pydantic-settings==2.15.0
+
+# ---- Persistence (TRD §3.4: PostgreSQL + PostGIS) ----
+# asyncpg chosen over psycopg2 because TRD §3.2 mandates a non-blocking
+# event loop; SQLAlchemy 2.x's async engine requires an async DBAPI driver.
+sqlalchemy==2.0.52
+# Required by SQLAlchemy's async engine (its greenlet bridge); not pulled in
+# automatically on CPython 3.13, confirmed by an ImportError at runtime.
+greenlet==3.5.5
+asyncpg==0.31.0
+geoalchemy2==0.20.0
+
+# ---- Background jobs / cache (TRD §3.2, §3.4) ----
+celery==5.6.3
+redis==8.1.0
+
+# ---- Forecast file I/O (WeatherNext 2 Cyclones Mini) ----
+# WeatherNext 2's export is an xarray.Dataset (confirmed by directly
+# inspecting a real Colab-produced .nc file with xarray.open_dataset).
+# NetCDF is how the manually-run Colab export is carried to this machine.
+# NOTE: `weathernext` (the model package itself) and `jax` are deliberately
+# NOT pinned here — inference is never run in this backend; it happens
+# ahead of time, by hand, in Colab. See data/wn2_mini/README.md.
+numpy==2.5.2
+xarray==2026.7.0
+h5netcdf==1.8.1
+h5py==3.16.0          # h5netcdf's HDF5 backend; not pulled in automatically
+
+# ---- GEFS GRIB2 decoding (2026-08-20 amendment: GEFS is now primary) ----
+# NOAA publishes GEFS as GRIB2, not NetCDF; cfgrib is xarray's real GRIB
+# engine and eccodes is its ECMWF decoding backend. Both resolved from
+# PyPI in-session and confirmed working by actually decoding a real,
+# live-fetched GEFS 0.25deg record (see gefs/parser.py's docstring).
+cfgrib==0.9.15.1
+eccodes==2.47.0
+
+# ---- HTTP client for CWC / India-WRIS (T1A.6) ----
+httpx==0.28.1
+
+# ---- Test & type tooling ----
+pytest==9.1.1
+pytest-asyncio==1.4.0
+mypy==2.3.1
