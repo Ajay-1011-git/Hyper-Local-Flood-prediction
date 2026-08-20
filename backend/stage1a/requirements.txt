@@ -37,6 +37,14 @@ xarray==2026.7.0
 h5netcdf==1.8.1
 h5py==3.16.0          # h5netcdf's HDF5 backend; not pulled in automatically
 
+# ---- GEFS GRIB2 decoding (2026-08-20 amendment: GEFS is now primary) ----
+# NOAA publishes GEFS as GRIB2, not NetCDF; cfgrib is xarray's real GRIB
+# engine and eccodes is its ECMWF decoding backend. Both resolved from
+# PyPI in-session and confirmed working by actually decoding a real,
+# live-fetched GEFS 0.25deg record (see gefs/parser.py's docstring).
+cfgrib==0.9.15.1
+eccodes==2.47.0
+
 # ---- HTTP client for CWC / India-WRIS (T1A.6) ----
 httpx==0.28.1
 

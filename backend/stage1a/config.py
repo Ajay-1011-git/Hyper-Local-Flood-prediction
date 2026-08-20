@@ -29,6 +29,37 @@ class Stage1ASettings(BaseSettings):
     rather than validating as an empty string.
     """
 
+    # ---- GEFS (NOAA Global Ensemble Forecast System, 0.25deg) ----
+    # 2026-08-20 amendment: GEFS is now the primary regional-forecast
+    # source (confirmed live via NOAA's real NOMADS grib-filter service
+    # this session -- see gefs/client.py's module docstring). Real,
+    # confirmed, currently-live endpoint -- not assumed.
+    # PRIMARY transport: NOAA's Open Data Dissemination S3 bucket. Chosen
+    # over the NOMADS filter service after the latter demonstrably
+    # rate-limited/load-shed this session under a real full-cycle fetch
+    # (372 requests), silently costing GEFS the chain. S3 has no such
+    # limit; the cost is bandwidth (the whole global 0.25deg APCP record
+    # per member/hour, ~287KB, vs NOMADS's ~750-byte server-side subset)
+    # -- confirmed live, see gefs/client.py's module docstring.
+    gefs_s3_base_url: str = "https://noaa-gefs-pds.s3.amazonaws.com"
+    # FALLBACK transport: NOMADS's GRIB-filter CGI (server-side subsetting).
+    gefs_filter_base_url: str = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p25s.pl"
+    # NOAA typically publishes a cycle ~4-5h after its nominal time;
+    # requesting too soon gets a real "not yet published" error (confirmed
+    # live: a future/unpublished cycle returns HTTP 403 with NOMADS's own
+    # "Request for Future Data" page). Conservative default -- FLAG FOR
+    # HUMAN REVIEW, not independently verified as NOAA's exact SLA.
+    gefs_publication_lag_hours: float = 5.0
+    # How many 6-hourly cycles to step back through before giving up and
+    # falling through to WeatherNext 2 Mini.
+    gefs_cycle_retries: int = 4
+    # Bounded concurrency for per-(member,hour) fetches -- courtesy to a
+    # shared government service, not a NOAA-published hard limit. Lowered
+    # from an initial 8 after observing live 302/error responses under
+    # this session's own repeated high-concurrency test load.
+    gefs_max_concurrent_requests: int = 5
+    gefs_request_timeout_s: float = 20.0
+
     # ---- WeatherNext 2 Cyclones Mini (regional ensemble weather forecast) ----
     # Path to the .nc file exported by manually running wn2_demo.ipynb in
     # Colab and copying the result here (TRD §3.6 local-first: no live sync

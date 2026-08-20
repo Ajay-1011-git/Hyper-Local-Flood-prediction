@@ -29,3 +29,7 @@ backend/stage1b/data/
 .DS_Store
 .vscode/
 .idea/
+
+# cfgrib writes a per-file index cache beside any GRIB2 it opens.
+# Generated artifact, not a fixture -- never commit it.
+*.grib2.*.idx

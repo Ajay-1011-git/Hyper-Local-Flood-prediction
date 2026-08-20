@@ -13,14 +13,17 @@ first, in a commit right before this one) documents the confirmed real
 GenCast/WeatherNext calling convention and can be restored as a new link in
 the chain below.
 
-CURRENT CHAIN
--------------
-    1. GEFS               (gefs.client — NOT implemented, always unavailable)
+CURRENT CHAIN (GEFS made real 2026-08-20 — see gefs/client.py)
+--------------------------------------------------------------
+    1. GEFS                (gefs.client — REAL, live, 0.25deg, 31 members)
     2. WeatherNext 2 Mini  (wn2mini — real, confirmed-working, manual export)
 
 Order is an explicit human decision, not a default: GEFS is fully automated
-with no manual step, so it should be tried first once it exists;
-WeatherNext 2 Mini requires a human to run a Colab notebook ahead of time.
+with no manual step, while WeatherNext 2 Mini requires a human to run a
+Colab notebook ahead of time. As of the 2026-08-20 amendment GEFS is also
+the more accurate input for Stage 1B's downscaling — 0.25deg (~27.75km)
+native resolution vs WN2 Mini's 1.0deg (~111km), which is the stated
+reason the project owner asked for the switch.
 
 If neither link produces a forecast, `get_regional_forecast` raises
 `NoRegionalForecastAvailableError` — never fabricates a result.
@@ -103,7 +106,8 @@ def get_regional_forecast(
     except WN2ForecastUnavailableError as exc:
         logger.warning("%s No further source to try.", exc)
         raise NoRegionalForecastAvailableError(
-            "No regional forecast is available: GEFS is not implemented and "
+            "No regional forecast is available: no published GEFS cycle "
+            "could be reached, and "
             f"WeatherNext 2 Mini has no export at "
             f"{settings.wn2_mini_forecast_path}. Run wn2_demo.ipynb in Colab "
             "and copy the result there."
