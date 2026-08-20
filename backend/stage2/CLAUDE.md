@@ -284,3 +284,41 @@ confirmed directly with the project owner, not inferred from any document.
     "fast" — real number, not claimed). 68/68 tests pass (9 new, in
     `tests/test_assimilation.py`, per the build doc's file list), mypy
     clean.
+
+## ADDENDUM — 2026-08-20 (cont.): T2.9 API routes, built and real-VERIFIED
+
+18. **New: `routes.py`.** `GET /api/simulation/site/{site_id}` (TRD §5.1,
+    returns the precomputed latest `SimulationResult`, 404 if none exists
+    yet — never computes on demand, per TRD §4's own principle) and
+    `POST /api/simulation/assimilate` (body: `SensorReading`; calls
+    T2.8, broadcasts `sensor_assimilated` over its own `/ws/site/{site_id}`
+    WebSocket). Runtime state (`nodes`/`edges`/latest `SimulationResult`
+    per site) is a plain in-process dict, populated by a real
+    `set_site_state()` — the actual T2.1-T2.7 precompute pipeline that
+    fills it is Celery-orchestrated per TRD §4, out of this task's scope.
+    `sensor_assimilated`'s payload shape (`{sensor_id, new_reading,
+    updated_region}`) matches Stage 1B's own already-real, already-
+    broadcasting implementation (`stage1b/sensor/ingest.py`, confirmed by
+    reading its actual code) exactly — this endpoint is what finally
+    makes `updated_region` real (Stage 1B's own version has always sent
+    `None` there, honestly, since Stage 2 didn't exist yet).
+19. **Real VERIFY: a real uvicorn server, seeded with the real pipeline's
+    output, curl'd for real.** Ran the full real T2.1→T2.7 pipeline
+    (real GLB, real DEM, real-trained GNN, real 4-member/3-hour ensemble)
+    to seed `vit-vellore`'s site state, with `SENSOR_TARGET_X_M/Y_M`/
+    `SENSOR_MOUNT_HEIGHT_M` set to a real non-wall node's coordinates for
+    this VERIFY (the hardware itself still isn't placed). Started a real
+    `uvicorn` process on `127.0.0.1:8765`. `curl GET
+    /api/simulation/site/vit-vellore` → 200, real `simulation_id`,
+    22,374 real `node_states`, real envelope
+    (`{max_depth_m: 0.0255, hours_any_node_exceeds_threshold: 0,
+    total_hours: 3, member_count: 4}`). `curl POST
+    /api/simulation/assimilate` with a real `distance_cm=15.0` reading →
+    200; the target node at the latest hour shows depth_mean/min/max all
+    collapsed to exactly 0.35m (the real measured value),
+    `ensemble_agreement_fraction=1.0`, velocity/rate_of_rise unchanged —
+    a subsequent `curl GET` on the same site confirms the update
+    persisted in the runtime state. 73/73 tests pass (5 new, in
+    `tests/test_routes.py`, per the build doc's file list, including a
+    real WebSocket test asserting the `sensor_assimilated` broadcast's
+    exact payload shape), mypy clean.
