@@ -1,0 +1,40 @@
+# Stage 2 — pinned dependencies.
+# Every version below was resolved from PyPI's JSON API in-session
+# (https://pypi.org/pypi/<pkg>/json), not recalled from memory.
+# Target interpreter: CPython 3.13.
+
+# ---- API layer ----
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+
+# ---- Validation / config ----
+pydantic==2.13.4
+pydantic-settings==2.15.0
+
+# ---- Persistence (matches Stage 1A/1B: PostgreSQL, async) ----
+sqlalchemy==2.0.52
+asyncpg==0.31.0
+greenlet==3.5.5
+
+# ---- GLB / mesh ingestion (T2.1) ----
+# trimesh chosen over bare pygltflib: gives scene-graph access to named
+# objects (Building_01 etc.) and mesh geometry (vertices/faces) directly,
+# rather than raw glTF accessor/buffer parsing. pygltflib is trimesh's own
+# GLTF backend, pulled in transitively.
+trimesh==5.0.0
+pygltflib==1.16.5
+
+# ---- Terrain / geometry (T2.2, T2.3, T2.4) ----
+rasterio==1.5.1
+shapely==2.1.2
+numpy==2.5.2
+scipy==1.18.0
+
+# ---- Physics model (T2.6) ----
+torch==2.13.0
+torch-geometric==2.8.0.post1
+
+# ---- Test & type tooling ----
+pytest==9.1.1
+pytest-asyncio==1.4.0
+mypy==2.3.1

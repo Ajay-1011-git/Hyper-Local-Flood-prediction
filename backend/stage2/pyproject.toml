@@ -1,0 +1,30 @@
+# Tooling config for the Stage 2 module only.
+
+[tool.pytest.ini_options]
+pythonpath = [".."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"
+
+[tool.mypy]
+# Canonical invocation (run from `backend/`):
+#   mypy --config-file stage2/pyproject.toml stage2
+python_version = "3.13"
+explicit_package_bases = true
+namespace_packages = true
+# stage2/shared/contracts.py imports backend.shared.contracts (see that
+# file's docstring) -- mypy is invoked scoped to just stage2/, so without
+# this it can't see backend/ to resolve that import statically, even
+# though it resolves fine at runtime. Mirrors stage1a/pyproject.toml.
+mypy_path = ".."
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["trimesh.*", "pygltflib.*", "rasterio.*", "torch_geometric.*", "shapely.*"]
+ignore_missing_imports = true
