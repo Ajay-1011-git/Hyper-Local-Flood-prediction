@@ -170,6 +170,7 @@ def run_ensemble(
     device = device or resolve_device()
     node_ids = [n.node_id for n in nodes]
     building_id_by_node = {n.node_id: n.building_id for n in nodes}
+    road_segment_id_by_node = {n.node_id: n.road_segment_id for n in nodes}
 
     per_member_depth: Dict[int, Dict[str, Dict[int, float]]] = {}
     per_member_velocity: Dict[int, Dict[str, Dict[int, float]]] = {}
@@ -216,6 +217,7 @@ def run_ensemble(
                     rate_of_rise=rate_of_rise,
                     ensemble_agreement_fraction=exceed_count / len(depths),
                     building_id=building_id_by_node[nid],
+                    road_segment_id=road_segment_id_by_node[nid],
                 )
             )
             prev_mean_depth[nid] = depth_mean

@@ -9,7 +9,7 @@ import pytest
 
 from stage2.mesh.computational_mesh import build_computational_mesh
 from stage2.mesh.errors import DoubleTaggedNodeError
-from stage2.shared.contracts import BuildingFootprint, TerrainGrid
+from stage2.shared.contracts import BuildingFootprint, RoadSegment, TerrainGrid
 from stage2.tests.fixtures import synthetic_site_transform
 
 SITE_TRANSFORM = synthetic_site_transform()
@@ -218,3 +218,62 @@ def test_raised_and_wall_can_coexist_orthogonally() -> None:
     assert garden_node.is_wall_node is False
     assert len(wall_nodes) > 0
     assert all(n.elevation_m == pytest.approx(216.0) for n in wall_nodes)
+
+
+# --------------------------------------------------------------- road tagging
+# (2026-08-20 addition — see terrain/road_segmentation.py's module docstring
+# for why this exists: Stage 3's rank_structures needs road_segment_id on
+# NodeState, and this is the only place that link can be made.)
+
+
+def test_cells_near_a_road_segment_get_tagged() -> None:
+    terrain = _centered_terrain(size=11, resolution_m=1.0)  # -5m..+5m each axis
+    # A straight road segment along the east axis, through the origin.
+    road = RoadSegment(segment_id="Road_Segment_000", polyline=[[-5.0, 0.0], [5.0, 0.0]])
+    nodes, edges = build_computational_mesh(
+        terrain, [], SITE_TRANSFORM, road_segments=[road], road_tagging_buffer_m=1.0
+    )
+    on_road = next(n for n in nodes if n.node_id == "n_5_5")  # centered cell, on the road
+    off_road = next(n for n in nodes if n.node_id == "n_0_0")  # far corner
+
+    assert on_road.road_segment_id == "Road_Segment_000"
+    assert off_road.road_segment_id is None
+
+
+def test_road_tagging_respects_the_buffer_distance() -> None:
+    terrain = _centered_terrain(size=11, resolution_m=1.0)
+    road = RoadSegment(segment_id="Road_Segment_000", polyline=[[-5.0, 0.0], [5.0, 0.0]])
+    nodes, edges = build_computational_mesh(
+        terrain, [], SITE_TRANSFORM, road_segments=[road], road_tagging_buffer_m=0.5
+    )
+    # n_3_5 sits at north~=2m (row 3 of 11, centered) -- well outside a 0.5m buffer.
+    far_from_road = next(n for n in nodes if n.node_id == "n_3_5")
+    assert far_from_road.road_segment_id is None
+
+
+def test_wall_nodes_are_never_also_tagged_as_road_nodes() -> None:
+    """A building interior cell must not also carry a road_segment_id,
+    even if a road segment happens to pass geometrically near/through the
+    building's footprint (roads and buildings don't overlap in this
+    site's real geometry, but the tagging logic itself must not assume
+    that -- it must actively exclude wall cells)."""
+    terrain = _centered_terrain(size=11, resolution_m=1.0)
+    building = BuildingFootprint(
+        building_id="Building_01",
+        footprint_polygon=[[-2.0, -2.0], [-2.0, 2.0], [2.0, 2.0], [2.0, -2.0], [-2.0, -2.0]],
+        height_m=10.0,
+    )
+    road = RoadSegment(segment_id="Road_Segment_000", polyline=[[-5.0, 0.0], [5.0, 0.0]])
+    nodes, edges = build_computational_mesh(
+        terrain, [building], SITE_TRANSFORM, road_segments=[road], road_tagging_buffer_m=3.0
+    )
+    wall_nodes = [n for n in nodes if n.is_wall_node]
+    assert len(wall_nodes) > 0
+    assert all(n.road_segment_id is None for n in wall_nodes)
+
+
+def test_no_road_segments_tags_nothing() -> None:
+    """The default (no road_segments given) must never fabricate a tag."""
+    terrain = _centered_terrain(size=11, resolution_m=1.0)
+    nodes, edges = build_computational_mesh(terrain, [], SITE_TRANSFORM)
+    assert all(n.road_segment_id is None for n in nodes)

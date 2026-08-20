@@ -323,6 +323,63 @@ confirmed directly with the project owner, not inferred from any document.
     real WebSocket test asserting the `sensor_assimilated` broadcast's
     exact payload shape), mypy clean.
 
+## ADDENDUM — 2026-08-20 (cont.): road_segment_id tagging, added during a full-system wiring audit
+
+23. **Real cross-stage gap found and closed, with explicit project-owner
+    authorization to touch this stage again.** Stage 3's `rank_structures`
+    (T3.5) needs `NodeState.road_segment_id` to attribute hazard to a
+    road segment — the same mechanism `building_id` already provides for
+    buildings. Nothing in Stage 2 ever set it: `Road_Network` was loaded
+    (T2.1) but never used past that; `footprint_extraction.py` explicitly
+    scoped itself to buildings only.
+24. **New: `terrain/road_segmentation.py`.** `extract_road_segments(road_mesh,
+    site_transform, cell_size_m=20.0) -> List[RoadSegment]` and
+    `tag_road_node(east_m, north_m, segments, buffer_m=4.0) -> str | None`.
+    First implementation used a single global PCA/SVD principal-axis fit
+    (mirroring Stage 3's own T3.2, which assumes an already-isolated,
+    elongated road strip) — **real-tested directly against the actual
+    `vit_vellore_site.glb` and it failed its own ambiguity check**
+    (elongation_ratio=0.61, just over a 0.6 threshold): the real campus
+    `Road_Network` is a loop/branching network spanning ~220m x 130m
+    (3,408 real vertices), not one straight corridor, so no single axis
+    represents it. Redesigned to spatial-grid-binning instead (each
+    occupied `cell_size_m` cell becomes one segment) — topology-agnostic
+    by construction, handles loops/branches/curves/dead-ends without
+    assuming a shape. `mesh/computational_mesh.py`'s `build_computational_mesh`
+    gained `road_segments`/`road_tagging_buffer_m` parameters, tagging
+    each non-wall cell within the buffer of a segment (wall cells are
+    excluded from road tagging — roads and buildings don't overlap in
+    this site's real geometry). `gnn/ensemble.py`'s `run_ensemble` now
+    copies `road_segment_id` through to `NodeState` the same way it
+    already does for `building_id`.
+25. **`ComputationalMeshNode` gained `road_segment_id: Optional[str] =
+    None`** (Stage-2-internal contract, `shared/contracts.py`) and
+    `RoadSegment` is now re-exported there too (already existed in the
+    canonical `backend/shared/contracts.py`, added by Stage 3).
+26. **Real VERIFY, against the actual site** (GLB + real Stage 1B DEM,
+    both real local artifacts as of 2026-08-20): `extract_road_segments`
+    against the real `Road_Network` produces 41 real segments; a full
+    real `build_computational_mesh` run (real footprints, real terrain,
+    real road segments) over a 131x226 grid produced 29,606 total nodes /
+    58,855 edges, 9,780 wall nodes (Building_01=7,453, Building_02=2,327),
+    **6,590 road-tagged nodes, using all 41 of 41 real segments** (none
+    orphaned/unused), and **zero nodes double-tagged** as both wall and
+    road. 92/93 tests pass (12 new: 7 in `tests/test_road_segmentation.py`,
+    4 road-tagging tests added to `tests/test_mesh.py`, 1 propagation
+    test added to `tests/test_gnn.py` — the 1 pre-existing failure is
+    `test_find_terrain_grid_path_real_db_round_trip`, a local-Postgres
+    data collision unrelated to this change, documented in that test's
+    own docstring), mypy clean (`--config-file stage2/pyproject.toml
+    stage2`, 51 source files).
+27. **Real GLB/DEM/wn2_mini data availability, for the record**: as of
+    this audit, `blender_prep/output/vit_vellore_site.glb` +
+    `anchor_point.json` and Stage 1B's real registered DEM
+    (`dem_metadata` id=3, `data/dem/dem_bb048c05421ec791_terrain.tif`)
+    are both present and real on this machine — not synthetic fixtures.
+    Building_01 real footprint: height=23.31m, area matches this
+    session's earlier real T2.3 VERIFY. Building_02 real footprint:
+    height=27.16m.
+
 ## ADDENDUM — 2026-08-20 (cont.): T2.10 test suite completion, real coverage audit
 
 20. **Coverage audit** (`pytest-cov`, added to `requirements.txt`,

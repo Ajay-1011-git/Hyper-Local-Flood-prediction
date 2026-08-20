@@ -57,6 +57,7 @@ from backend.shared.contracts import (  # noqa: E402
     BuildingFootprint,
     DownscaledForecastField,
     NodeState,
+    RoadSegment,
     SensorReading,
     SimulationResult,
     TerrainGrid,
@@ -76,6 +77,15 @@ class ComputationalMeshNode(BaseModel):
     elevation_m: float
     is_wall_node: bool
     building_id: Optional[str]  # set if is_wall_node is True
+    road_segment_id: Optional[str] = None  # 2026-08-20 addition: set if the
+    # cell falls within ROAD_TAGGING_BUFFER_M of a road centerline segment
+    # (mesh/computational_mesh.py's `_tag_road_node`) -- mirrors building_id's
+    # tagging exactly, for the same reason: Stage 3's rank_structures needs a
+    # way to attribute hazard to a RoadSegment, and this is the only place
+    # that link can be made (RoadSegment geometry + real mesh positions both
+    # live here). A cell can have building_id AND road_segment_id both None
+    # (open, untagged terrain) but never both set (roads and buildings don't
+    # physically overlap in this site's real geometry).
 
 
 class MeshEdge(BaseModel):
@@ -102,6 +112,7 @@ __all__ = [
     "SensorReading",
     "AnchorPoint",
     "BuildingFootprint",
+    "RoadSegment",
     "TerrainGrid",
     "ComputationalMeshNode",
     "NodeState",

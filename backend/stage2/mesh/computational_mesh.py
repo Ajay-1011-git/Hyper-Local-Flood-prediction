@@ -67,8 +67,10 @@ from stage2.shared.contracts import (
     BuildingFootprint,
     ComputationalMeshNode,
     MeshEdge,
+    RoadSegment,
     TerrainGrid,
 )
+from stage2.terrain.road_segmentation import ROAD_TAGGING_BUFFER_M, tag_road_node
 from stage2.terrain.site_transform import SiteTransform
 
 
@@ -120,6 +122,8 @@ def build_computational_mesh(
     footprints: List[BuildingFootprint],
     site_transform: SiteTransform,
     raised_terrain_features: Optional[List[Tuple[BuildingFootprint, float]]] = None,
+    road_segments: Optional[List[RoadSegment]] = None,
+    road_tagging_buffer_m: float = ROAD_TAGGING_BUFFER_M,
 ) -> Tuple[List[ComputationalMeshNode], List[MeshEdge]]:
     """Combine `terrain` and `footprints` into the finite-volume mesh graph.
 
@@ -135,19 +139,29 @@ def build_computational_mesh(
     — see module docstring. Applied as a pure elevation offset, never
     `is_wall_node`.
 
+    `road_segments` (2026-08-20 addition): real `RoadSegment`s from
+    `terrain/road_segmentation.py`'s `extract_road_segments`, in the same
+    real east/north frame as `footprints`. Cells within
+    `road_tagging_buffer_m` of a segment get `road_segment_id` set —
+    mirrors `building_id`'s point-in-polygon tagging, but distance-to-
+    polyline instead (roads are lines, not closed polygons). `None`
+    (the default) tags nothing, matching the honest "no road data" case
+    rather than fabricating segment ids.
+
     Returns `(nodes, edges)`: one `ComputationalMeshNode` per terrain grid
     cell (position in real east/north meters, matching `BuildingFootprint`'s
-    frame), tagged `is_wall_node`/`building_id` via a real point-in-polygon
-    test — never an approximation. `edges` connects each cell to its
-    4-connected (N/S/E/W) neighbors, carrying real distance and DEM-slope,
-    matching RBTV1/mSWE-GNN's confirmed `edge_attr` shape (see module
-    docstring).
+    frame), tagged `is_wall_node`/`building_id`/`road_segment_id` via real
+    geometric tests — never an approximation. `edges` connects each cell to
+    its 4-connected (N/S/E/W) neighbors, carrying real distance and
+    DEM-slope, matching RBTV1/mSWE-GNN's confirmed `edge_attr` shape (see
+    module docstring).
 
     Raises:
         DoubleTaggedNodeError: if any cell's position falls inside more
             than one building's footprint.
     """
     raised_terrain_features = raised_terrain_features or []
+    road_segments = road_segments or []
     elevation = np.asarray(terrain.elevation_grid, dtype=float)
     height, width = elevation.shape
 
@@ -180,6 +194,16 @@ def build_computational_mesh(
             raise_offset = _raised_elevation_offset_m(
                 east_m, north_m, raised_terrain_features
             )
+            # Only tag roads on non-wall cells -- a building interior cell
+            # is never simultaneously "on a road" in this site's real
+            # geometry (roads and buildings don't overlap), and skipping
+            # the check there avoids a wasted distance computation over
+            # every wall cell.
+            road_segment_id = (
+                None
+                if is_wall
+                else tag_road_node(east_m, north_m, road_segments, road_tagging_buffer_m)
+            )
             nodes.append(
                 ComputationalMeshNode(
                     node_id=node_id,
@@ -188,6 +212,7 @@ def build_computational_mesh(
                     elevation_m=float(elevation[row, col]) + raise_offset,
                     is_wall_node=is_wall,
                     building_id=building_id,
+                    road_segment_id=road_segment_id,
                 )
             )
 

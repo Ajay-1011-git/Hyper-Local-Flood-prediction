@@ -238,6 +238,34 @@ def test_run_ensemble_never_floods_a_wall_node() -> None:
     assert all(ns.building_id == "Building_01" for ns in wall_states)
 
 
+def test_run_ensemble_propagates_road_segment_id_to_node_state() -> None:
+    """2026-08-20 addition: road_segment_id must flow from
+    ComputationalMeshNode through to NodeState the same way building_id
+    already does -- Stage 3's rank_structures depends on this link."""
+    nodes, edges = _small_mesh(size=4)
+    nodes = [
+        n.model_copy(update={"road_segment_id": "Road_Segment_000"})
+        if n.node_id == "n_2_2"
+        else n
+        for n in nodes
+    ]
+    device = resolve_device()
+    model = build_model(device)
+    forecast = _forecast(num_members=3, hours=3)
+
+    result = run_ensemble(
+        forecast, nodes, edges, model, cell_area_m2=4.0,
+        hazard_threshold_m=0.1, validation_error_m=0.02,
+        simulation_id="sim-road", device=device,
+    )
+
+    road_states = [ns for ns in result.node_states if ns.node_id == "n_2_2"]
+    other_states = [ns for ns in result.node_states if ns.node_id != "n_2_2"]
+    assert len(road_states) == 3  # one per hour
+    assert all(ns.road_segment_id == "Road_Segment_000" for ns in road_states)
+    assert all(ns.road_segment_id is None for ns in other_states)
+
+
 def test_run_ensemble_rejects_empty_member_list() -> None:
     from backend.shared.contracts import DownscaledForecastField
     from datetime import datetime, timezone
