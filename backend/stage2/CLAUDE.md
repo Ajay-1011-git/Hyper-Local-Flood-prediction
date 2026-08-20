@@ -178,3 +178,14 @@ confirmed directly with the project owner, not inferred from any document.
     from direct rainfall (not overtopping in this particular light-rain
     trajectory — the mechanism is in place via the elevation offset, not
     separately tested here). 55/55 tests still pass, mypy clean.
+11. **T2.6 (`gnn/model.py`+`training.py`+`graph_builder.py`) real-VERIFIED
+    against the real mesh too**, same day: built the real 7,458-node
+    graph, generated a real 6-hour solver trajectory (T2.5) as training
+    data, trained the single-scale SWE-GNN from scratch for 5 epochs on
+    Apple Silicon MPS. Unlike T2.5, this surfaced no bugs — training loss
+    decreased monotonically every epoch (0.0794 → 0.0405), one-step
+    validation MAE against the solver was small and finite
+    (depth 0.0185m, velocity 0.0086 m/s), and `inject_boundary`'s
+    ghost-cell-equivalent mechanism was confirmed to actually change the
+    model's downstream prediction for the injected node on the real
+    graph. No code changes were needed for T2.6.
