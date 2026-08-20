@@ -6,9 +6,10 @@ own location rather than the process's cwd).
 """
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from backend.stage3.vulnerability.fragility_curve import VULNERABILITY_CURVE_SOURCE
 
 _ENV_FILE = Path(__file__).resolve().parent / ".env"
 
@@ -28,9 +29,12 @@ class Settings(BaseSettings):
     # starting point, not an independently proven-correct value.
     hazard_threshold_depth_m: float = 0.3
 
-    # Filled in once T3.4 confirms a real, cited, published depth-damage
-    # curve — must never be blank when vulnerability scoring actually runs.
-    vulnerability_curve_source: Optional[str] = None
+    # T3.4's real, cited, published depth-damage curve (see
+    # vulnerability/fragility_curve.py's module docstring for the full
+    # citation detail) -- defaults to it directly rather than staying
+    # blank, since T3.4 is now done; still overridable via .env if a
+    # human supplies a different confirmed source later.
+    vulnerability_curve_source: str = VULNERABILITY_CURVE_SOURCE
 
 
 settings = Settings()
