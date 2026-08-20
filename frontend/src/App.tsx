@@ -4,17 +4,16 @@ import About from './pages/About'
 import CitizenView from './pages/CitizenView'
 import Dashboard from './pages/Dashboard'
 import Landing from './pages/Landing'
-import SiteDetailPanel from './pages/SiteDetailPanel'
+import SiteDetail from './pages/SiteDetail'
 
 /**
  * App shell — real client-side routing (T4C.0), replacing the earlier
  * single always-mounted `SiteScene` root. Routes match the User Flow
  * doc's own information architecture (§2): `/` Landing, `/dashboard`
- * Operations, `/citizen` Citizen access, `/about` methodology. Only
- * Landing (T4C.0) is fully built this pass — `/dashboard` wraps the
- * already-real 3D scene as a placeholder for T4C.1's real four-zone
- * layout, and `/citizen`/`/about` are clearly-labeled placeholders for
- * T4C.4/T4C.6 — see each page's own docstring.
+ * Operations (with a real nested `site/:structureId` slide-over, T4C.2),
+ * `/citizen` Citizen access, `/about` methodology. `/citizen`/`/about`
+ * are still clearly-labeled placeholders for T4C.4/T4C.6 — see each
+ * page's own docstring.
  */
 export default function App() {
   return (
@@ -22,7 +21,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/dashboard" element={<Dashboard />}>
-          <Route path="site/:structureId" element={<SiteDetailPanel />} />
+          <Route path="site/:structureId" element={<SiteDetail />} />
         </Route>
         <Route path="/citizen" element={<CitizenView />} />
         <Route path="/about" element={<About />} />

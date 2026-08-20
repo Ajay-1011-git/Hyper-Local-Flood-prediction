@@ -54,6 +54,12 @@ export interface SceneState {
    *  own real severity color. `null` means nothing is selected. */
   highlightedStructureId: string | null
 
+  /** Real structure_ids the operator has toggled "Include in alert" for
+   *  (T4C.2's Site Detail panel) — global so the not-yet-built Alert
+   *  Composer (T4C.3) reads the SAME real selection state rather than a
+   *  second, disconnected copy. */
+  includedInAlertIds: string[]
+
   // Actions
   setCurrentHour: (hour: number) => void
   loadSimulationResult: (result: SimulationResult) => void
@@ -61,6 +67,7 @@ export interface SceneState {
   setConnectionStatus: (status: ConnectionStatus) => void
   applySocketEvent: (event: SiteSocketEvent) => void
   setHighlightedStructure: (structureId: string | null) => void
+  toggleIncludedInAlert: (structureId: string) => void
 
   // Selectors
   getNodeStateAt: (hour: number, nodeId: string) => NodeState | undefined
@@ -96,9 +103,16 @@ export const useSceneStore = create<SceneState>()((set, get) => ({
   connectionStatus: 'closed',
   lastSensorAssimilation: null,
   highlightedStructureId: null,
+  includedInAlertIds: [],
 
   setCurrentHour: (hour) => set({ currentHour: hour }),
   setHighlightedStructure: (structureId) => set({ highlightedStructureId: structureId }),
+  toggleIncludedInAlert: (structureId) =>
+    set((state) => ({
+      includedInAlertIds: state.includedInAlertIds.includes(structureId)
+        ? state.includedInAlertIds.filter((id) => id !== structureId)
+        : [...state.includedInAlertIds, structureId],
+    })),
 
   loadSimulationResult: (result) => {
     const { index, hoursAvailable } = mergeNodeStates({}, result.node_states) // full replace, not merge
