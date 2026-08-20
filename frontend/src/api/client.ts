@@ -30,6 +30,7 @@ import type {
   RegionalEnsembleForecast,
   SensorReading,
   SimulationResult,
+  SiteTerrainResponse,
 } from './types'
 
 const env = import.meta.env
@@ -135,6 +136,18 @@ export function fetchAlert(siteId: string): Promise<Alert> {
   return getJson(`${STAGE_BASE_URLS.stage4}/api/alert/${encodeURIComponent(siteId)}`)
 }
 
+/**
+ * Terrain heightmaps for the 3D scene (T4B.3).
+ *
+ * Served by Stage 4, not Stage 2, because neither Stage 1B's regional DEM
+ * nor Stage 2's `TerrainGrid` was ever exposed over HTTP — see
+ * `backend/stage4/terrain/dem_proxy.py`'s module docstring. Returns 503
+ * (never a synthetic flat surface) if no real DEM covers the site.
+ */
+export function fetchSiteTerrain(siteId: string): Promise<SiteTerrainResponse> {
+  return getJson(`${STAGE_BASE_URLS.stage4}/api/terrain/${encodeURIComponent(siteId)}`)
+}
+
 // ------------------------------------------------- TanStack Query helpers
 
 /** Query keys, centralised so a cache invalidation can't typo a key. */
@@ -145,4 +158,5 @@ export const queryKeys = {
   simulation: (siteId: string) => ['simulation', siteId] as const,
   damageRanking: (siteId: string) => ['damageRanking', siteId] as const,
   alert: (siteId: string) => ['alert', siteId] as const,
+  siteTerrain: (siteId: string) => ['siteTerrain', siteId] as const,
 }

@@ -55,7 +55,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Tuple
 
 import requests
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.stage4.alerts.cap_generator import derive_severity, derive_urgency, generate_cap_xml
@@ -63,7 +63,14 @@ from backend.stage4.alerts.multilingual import generate_alert_text
 from backend.stage4.alerts.site_geometry import load_real_site_polygon
 from backend.stage4.config import settings
 from backend.stage4.db import get_redis_client
-from backend.stage4.shared.contracts import Alert, DamageRankEntry, NodeState, SimulationResult
+from backend.stage4.shared.contracts import (
+    Alert,
+    DamageRankEntry,
+    NodeState,
+    SimulationResult,
+    SiteTerrainResponse,
+)
+from backend.stage4.terrain.dem_proxy import TerrainUnavailableError, build_site_terrain
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +192,35 @@ def _get_damage_ranking(site_id: str) -> Tuple[List[DamageRankEntry], str]:
                 exc,
             )
     return _mock_damage_ranking(site_id), "mock_dev_fixture"
+
+
+# ---------------------------------------------------------------------------
+# T4B.3 — GET /api/terrain/{site_id}
+#
+# Closes a real cross-stage gap: neither Stage 1B's regional DEM nor Stage
+# 2's TerrainGrid was reachable over HTTP, so the 3D scene had no geometry
+# to render. See terrain/dem_proxy.py's module docstring for why serving it
+# from here (rather than adding a Stage 2 endpoint) is the project owner's
+# chosen approach, and why reading the same DEM is honest rather than a
+# substitute for Stage 2's terrain.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/terrain/{site_id}", response_model=SiteTerrainResponse)
+async def get_terrain(site_id: str) -> SiteTerrainResponse:
+    """Real regional + site-local elevation heightmaps for the 3D scene.
+
+    Raises:
+        503: no real DEM covers the configured site, or it can't be read.
+            Never falls back to a synthetic/flat surface — a fabricated
+            terrain would be indistinguishable from real terrain once
+            rendered.
+    """
+    try:
+        return await build_site_terrain(site_id)
+    except TerrainUnavailableError as exc:
+        logger.error("Terrain unavailable for %s: %s", site_id, exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

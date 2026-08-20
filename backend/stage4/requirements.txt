@@ -20,5 +20,9 @@ mypy==2.3.1
 # T4A.1: confirmed real CAP 1.2 schema needs real XSD-validation
 # capability (not just string generation) -- lxml.etree supports
 # XMLSchema validation directly, stdlib xml.etree does not.
+# ---- T4B.3: terrain heightmap proxy (reads Stage 1B's real DEM GeoTIFF) ----
+rasterio==1.5.1                # same pin Stage 1B/2 use for this exact raster
+numpy==2.5.2
+
 lxml==6.1.2
 lxml-stubs==0.5.1

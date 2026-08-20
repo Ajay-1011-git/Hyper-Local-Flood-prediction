@@ -52,6 +52,45 @@ export interface TerrainGrid {
   interpolated_from_regional_dem: boolean
 }
 
+/**
+ * Stage 4 — `backend/stage4/shared/contracts.py::TerrainHeightmap` (T4B.3).
+ *
+ * A RENDERING view of terrain, distinct from Stage 2's `TerrainGrid`
+ * simulation contract above. `elevation_grid` cells are `null` where the
+ * real DEM has nodata (CartoDEM voids / values Stage 1B masked as
+ * implausible) — the backend refuses to fill them with a number, so the
+ * renderer must decide and disclose how it handles them.
+ */
+export interface TerrainHeightmap {
+  min_lat: number
+  max_lat: number
+  min_lon: number
+  max_lon: number
+  rows: number
+  cols: number
+  /** Real ground spacing of THIS grid, after decimation. */
+  resolution_m: number
+  elevation_grid: (number | null)[][]
+  /** Over finite cells only. */
+  min_elevation_m: number
+  max_elevation_m: number
+  nodata_cell_count: number
+}
+
+/** Stage 4 — `GET /api/terrain/{site_id}` (T4B.3). */
+export interface SiteTerrainResponse {
+  site_id: string
+  site_lat: number
+  site_lon: number
+  /** Always true: DEM-derived, never a survey. Must be stated on /about. */
+  interpolated_from_regional_dem: boolean
+  source_raster: string
+  /** Decimated wide surround (TRD §6 point 3). */
+  regional: TerrainHeightmap
+  /** Finer patch from the SAME raster — seamless with `regional` by construction. */
+  site: TerrainHeightmap
+}
+
 /** Stage 2 — `backend/shared/contracts.py::BuildingFootprint` */
 export interface BuildingFootprint {
   building_id: string

@@ -56,6 +56,27 @@ class Settings(BaseSettings):
     # through .env without JSON-list parsing.
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # ---- T4B.3: terrain heightmap proxy ----
+    # The real demo site. Defaults match the coordinates Stage 1B/2/3 all
+    # use (12.9691, 79.1559 -- the real VIT Vellore site confirmed by the
+    # GLB's own anchor-point fit), NOT Stage 1A's stale 12.9165/79.1325
+    # placeholder.
+    target_site_lat: Optional[float] = 12.969223
+    target_site_lon: Optional[float] = 79.155934
+    # Wide surrounding terrain: ~2km each way, decimated for frame rate
+    # (TRD 6, point 3 -- decimate the surround, keep the site detailed).
+    regional_terrain_half_span_m: float = 2000.0
+    # 64 -> ~3x decimation of the ~30m source over 4km, so the surround is
+    # genuinely lower-poly than the site patch (TRD 6 point 3). Set equal to
+    # or above the native sample count and there is no decimation at all --
+    # which is what an earlier 160 silently did.
+    regional_terrain_max_dim: int = 64
+    # Site-local patch: ~150m each way, rendered at the raster's NATIVE
+    # resolution (no decimation). NOTE: the source is ~30m CartoDEM, so
+    # "full resolution" is the raster's, not survey-grade -- that is only
+    # ~10x10 real samples over this extent. See dem_proxy.py's docstring.
+    site_terrain_half_span_m: float = 150.0
+
     @property
     def cors_allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
