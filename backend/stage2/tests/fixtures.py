@@ -45,3 +45,43 @@ def write_synthetic_anchor_point(path: Path) -> None:
         "north_axis": "+Y",
     }
     path.write_text(json.dumps(anchor))
+
+
+def write_synthetic_terrain_geotiff(path: Path, resolution_m: float = 5.0, size: int = 20) -> None:
+    """Write a real, valid 3-band GeoTIFF matching Stage 1B's format.
+
+    Band order/meaning mirrors `backend/stage1b/dem/processing.py`'s
+    `write_terrain_grids_geotiff` exactly (1=elevation, 2=slope_deg,
+    3=aspect_deg), in a real projected UTM CRS (zone 44N, correct for
+    Vellore's ~79 deg E longitude) — NOT the real Vellore terrain, an
+    arbitrary sloped surface, clearly a synthetic fixture.
+    """
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    # Arbitrary UTM 44N origin roughly matching Vellore's real coordinates,
+    # so the fixture's bbox is physically plausible for round-trip tests.
+    west, north = 300_000.0, 1_430_000.0
+    transform = from_origin(west, north, resolution_m, resolution_m)
+
+    y, x = np.mgrid[0:size, 0:size]
+    elevation = (200.0 + 0.5 * x + 0.3 * y).astype(np.float32)  # a simple synthetic slope
+    slope = np.full((size, size), 5.0, dtype=np.float32)
+    aspect = np.full((size, size), 45.0, dtype=np.float32)
+
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=size,
+        width=size,
+        count=3,
+        dtype="float32",
+        crs="EPSG:32644",
+        transform=transform,
+        nodata=np.nan,
+    ) as dst:
+        dst.write(elevation, 1)
+        dst.write(slope, 2)
+        dst.write(aspect, 3)

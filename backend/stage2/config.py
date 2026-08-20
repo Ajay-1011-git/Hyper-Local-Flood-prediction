@@ -39,6 +39,14 @@ class Stage2Settings(BaseSettings):
     database_url: str = "postgresql://localhost:5432/floodsystem"
     redis_url: str = "redis://localhost:6379/0"
 
+    # Confirmed in T2.2: Stage 1B's `dem_metadata` table (which points at
+    # the real terrain GeoTIFF on disk) has no HTTP API — it's read via a
+    # direct, standalone DB query (see terrain/dem_source.py). Defaults to
+    # the same value Stage 1B's own config.py/.env.example use, since the
+    # project's demo deployment (TRD §3.6) shares one local Postgres
+    # instance/database across stages, each owning its own tables.
+    stage1b_database_url: str = "postgresql://localhost:5432/floodsystem"
+
     @model_validator(mode="before")
     @classmethod
     def _strip_inline_env_comments(cls, data: Any) -> Any:
