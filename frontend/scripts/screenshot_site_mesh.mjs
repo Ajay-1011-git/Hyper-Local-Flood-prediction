@@ -5,7 +5,7 @@ const errs = []
 page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
 page.on('pageerror', (e) => errs.push('pageerror: ' + e.message))
 
-await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' })
+await page.goto('http://localhost:5173/dashboard', { waitUntil: 'networkidle' })
 await page.waitForSelector('[data-testid="terrain-provenance"]', { timeout: 20000 })
 // Let the terrain + site mesh both load and the water/lighting settle.
 await page.waitForTimeout(3000)

@@ -5,7 +5,7 @@ const errs = []
 page.on('console', m => { if (m.type()==='error') errs.push(m.text()) })
 page.on('pageerror', e => errs.push('pageerror: '+e.message))
 
-for (const [name, url] of [['shaded','http://localhost:5173/'],['wireframe','http://localhost:5173/?wireframe=1']]) {
+for (const [name, url] of [['shaded','http://localhost:5173/dashboard'],['wireframe','http://localhost:5173/dashboard?wireframe=1']]) {
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.waitForSelector('[data-testid="terrain-provenance"]', { timeout: 20000 })
   await page.waitForTimeout(2500)

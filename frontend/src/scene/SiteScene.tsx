@@ -21,6 +21,8 @@ import { fetchDamageRanking, fetchSimulationResult, fetchSiteTerrain, queryKeys 
 import type { DamageRankEntry } from '../api/types'
 import { useSiteSocket } from '../hooks/useSiteSocket'
 import { SEVERITY_ORDER, severityForEntry } from '../severity'
+import PixelButton from '../components/pixel/PixelButton'
+import PixelPanel from '../components/pixel/PixelPanel'
 import { useSceneStore } from '../store/sceneStore'
 import CameraController, { type CameraPose } from './CameraController'
 import DamageOverlay from './DamageOverlay'
@@ -191,18 +193,18 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           surface is DEM-derived, never surveyed. T4C.6's About page states
           it in full; this is the in-scene short form so the limitation is
           visible where the data is, not only on another page. */}
-      <div
-        data-testid="terrain-provenance"
+      <PixelPanel
+        testId="terrain-provenance"
+        scanlines
+        className="font-pixel-body"
         style={{
           position: 'absolute',
           left: 12,
           bottom: 12,
-          font: '12px system-ui, sans-serif',
-          color: '#cbd5e1',
-          background: 'rgba(11,16,32,0.72)',
-          padding: '6px 10px',
-          borderRadius: 6,
+          padding: '8px 12px',
           maxWidth: 520,
+          fontSize: '1.05rem',
+          lineHeight: 1.35,
         }}
       >
         Terrain interpolated from Stage 1B’s regional DEM (~
@@ -232,15 +234,16 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           : damageRankingError
             ? ' Damage ranking: unavailable.'
             : ' Damage ranking: loading…'}
-      </div>
+      </PixelPanel>
 
       {/* Minimal timeline control for T4B.5's own VERIFY (rising/falling
           across hours) -- the full TimelineScrubber component is T4C's
           own dashboard task; this is only enough to move `currentHour`
           for now. */}
       {hoursAvailable.length > 1 && (
-        <div
-          data-testid="hour-scrubber"
+        <PixelPanel
+          testId="hour-scrubber"
+          className="font-pixel-body"
           style={{
             position: 'absolute',
             right: 12,
@@ -248,16 +251,13 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
             display: 'flex',
             gap: 8,
             alignItems: 'center',
-            font: '12px system-ui, sans-serif',
-            color: '#cbd5e1',
-            background: 'rgba(11,16,32,0.72)',
             padding: '6px 10px',
-            borderRadius: 6,
+            fontSize: '1.1rem',
           }}
         >
-          <button
-            type="button"
+          <PixelButton
             data-testid="hour-prev"
+            style={{ padding: '0.25em 0.6em', fontSize: '1rem' }}
             onClick={() =>
               setCurrentHour(
                 hoursAvailable[Math.max(0, hoursAvailable.indexOf(currentHour) - 1)] ?? currentHour,
@@ -265,11 +265,11 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
             }
           >
             ◀
-          </button>
+          </PixelButton>
           <span>hour {currentHour}</span>
-          <button
-            type="button"
+          <PixelButton
             data-testid="hour-next"
+            style={{ padding: '0.25em 0.6em', fontSize: '1rem' }}
             onClick={() =>
               setCurrentHour(
                 hoursAvailable[
@@ -279,8 +279,8 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
             }
           >
             ▶
-          </button>
-        </div>
+          </PixelButton>
+        </PixelPanel>
       )}
 
       {/* T4B.8 — "A single click ... smoothly flies the camera down into
@@ -300,39 +300,25 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           gap: 6,
         }}
       >
-        <button
-          type="button"
+        <PixelButton
           data-testid="fly-camera"
+          variant="primary"
           onClick={() => {
             setFlyTrigger((n) => n + 1)
             setAtSite((was) => !was)
           }}
-          style={{
-            font: '12px system-ui, sans-serif',
-            color: '#cbd5e1',
-            background: 'rgba(11,16,32,0.72)',
-            padding: '6px 10px',
-            borderRadius: 6,
-            border: '1px solid rgba(203,213,225,0.3)',
-            cursor: 'pointer',
-          }}
         >
           {atSite ? 'Fly to region ▸' : 'Fly to site ▸'}
-        </button>
+        </PixelButton>
         {flyProgress && (
-          <div
-            data-testid="fly-progress"
-            style={{
-              font: '11px system-ui, sans-serif',
-              color: '#cbd5e1',
-              background: 'rgba(11,16,32,0.72)',
-              padding: '4px 8px',
-              borderRadius: 6,
-            }}
+          <PixelPanel
+            testId="fly-progress"
+            className="font-pixel-body"
+            style={{ padding: '4px 10px', fontSize: '1rem' }}
           >
             {flyProgress.flyingToSite ? 'Flying to site…' : 'Flying to region…'}{' '}
             {Math.round(flyProgress.progress * 100)}%
-          </div>
+          </PixelPanel>
         )}
       </div>
     </div>

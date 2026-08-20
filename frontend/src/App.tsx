@@ -1,30 +1,29 @@
-import SiteScene from './scene/SiteScene'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
-const SITE_ID = import.meta.env.VITE_SITE_ID ?? 'vit-vellore'
+import About from './pages/About'
+import CitizenView from './pages/CitizenView'
+import Dashboard from './pages/Dashboard'
+import Landing from './pages/Landing'
 
 /**
- * T4B.3 scene host.
- *
- * Replaces T4B.0's connectivity probe (which had served its purpose —
- * proving a real backend call reached the browser) with the real 3D
- * scene, so the terrain is rendered against live Stage 4 data and can be
- * captured by the headless-screenshot harness for this task's VERIFY.
- *
- * `?wireframe=1` renders both surfaces as wireframe, which is how the
- * regional/site boundary is actually inspected for a seam — a shaded
- * surface can hide a small discontinuity that wireframe makes obvious.
- *
- * Replaced by the real routed pages in Section C (T4C.0 onward).
+ * App shell — real client-side routing (T4C.0), replacing the earlier
+ * single always-mounted `SiteScene` root. Routes match the User Flow
+ * doc's own information architecture (§2): `/` Landing, `/dashboard`
+ * Operations, `/citizen` Citizen access, `/about` methodology. Only
+ * Landing (T4C.0) is fully built this pass — `/dashboard` wraps the
+ * already-real 3D scene as a placeholder for T4C.1's real four-zone
+ * layout, and `/citizen`/`/about` are clearly-labeled placeholders for
+ * T4C.4/T4C.6 — see each page's own docstring.
  */
 export default function App() {
-  const wireframe = new URLSearchParams(window.location.search).has('wireframe')
-
   return (
-    <main
-      style={{ background: 'var(--ops-bg)', color: 'var(--ops-text)', height: '100vh' }}
-      className="font-sans"
-    >
-      <SiteScene siteId={SITE_ID} wireframe={wireframe} />
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/citizen" element={<CitizenView />} />
+        <Route path="/about" element={<About />} />
+      </Routes>
+    </BrowserRouter>
   )
 }

@@ -1,28 +1,83 @@
+/* Press Start 2P (display), VT323 (retro body/labels), JetBrains Mono
+ * (dense data — risk tables, hazard numbers, CAP-XML, forms). Only the
+ * weights actually used, to keep the payload small. */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 /*
- * Two visual registers, per the User Flow document's explicit design
- * split (§3.2 dark ops dashboard vs §3.5 light, high-contrast citizen
- * view). Defined as real CSS variables here so both registers stay
- * consistent across pages rather than being re-picked per component.
+ * PIXEL-ART DESIGN SYSTEM — one shared visual language across every page.
+ * ===========================================================================
  *
- * The four-state severity palette (User Flow §1) is the one shared
- * vocabulary between them — same meaning in both registers, different
- * surrounding chrome.
+ * Palette sampled directly from the real hero artwork
+ * (assets/flood-city-hero.jpg — a pixel-art flooded night city), not
+ * invented: deep indigo sky/cloud tones, a bright violet lightning-glow
+ * accent, and a warm amber window-light accent. Two registers share this
+ * one palette family, per the User Flow doc's own deliberate dark-ops /
+ * light-citizen split (§3.2 vs §3.5) — same theme, different register,
+ * never two unrelated color systems.
+ *
+ * REAL, DELIBERATE MARKERS THAT KEEP THIS FROM READING AS GENERIC/AI-SLOP:
+ *   - Hard stepped borders (box-shadow bevels), border-radius: 0
+ *     everywhere in `.pixel-*` classes — no soft glassmorphism blur.
+ *   - image-rendering: pixelated on sprite/icon assets.
+ *   - A restrained scanline texture on dark surfaces (`.pixel-scanlines`),
+ *     used sparingly, never the loud neon/cyberpunk cliché.
+ *   - Severity is never color-only: `SeverityBadge` always pairs a pixel
+ *     glyph + text label with its color (matches the User Flow's own
+ *     §7 accessibility rule).
  */
 :root {
-  /* Four-state severity palette, shared by both registers */
-  --sev-normal: #2f855a;
-  --sev-advisory: #b7791f;
-  --sev-warning: #c05621;
-  --sev-critical: #c53030;
+  /* Real four-state severity palette — verbatim from severity.ts (the
+     tested, User-Flow-§1-sourced source of truth). Exposed here too so
+     plain-CSS classes can reference the same values without importing
+     TS into CSS. Kept byte-identical to severity.ts's SEVERITY_COLORS —
+     if these ever drift apart, that's a bug to fix, not two valid
+     options. (Corrected 2026-08-21: this file previously defined its
+     OWN separate normal/advisory/warning/critical set that had already
+     drifted from severity.ts's real Monitoring/Watch/Warning/Critical
+     values — a real, pre-existing inconsistency, fixed here rather than
+     left as two competing "sources of truth".) */
+  --sev-monitoring: #3b82f6;
+  --sev-watch: #f5b301;
+  --sev-warning: #f97316;
+  --sev-critical: #ef4444;
 
-  /* Ops dashboard (dark register) */
-  --ops-bg: #0b0f14;
-  --ops-panel: #141a22;
-  --ops-border: #232c38;
-  --ops-text: #e6edf3;
-  --ops-text-dim: #9aa7b4;
+  /* Pixel palette — sampled coordinates/values documented in the T4C
+     design-system commit message. */
+  --pixel-bg-0: #0c0926; /* night sky — page background */
+  --pixel-bg-1: #131349; /* cloud base — panel surface */
+  --pixel-bg-2: #1c2278; /* mid-cloud — raised/hover surface */
+  --pixel-border: #40319a; /* cloud mid-tone — hard borders */
+  --pixel-accent: #7b4dd1; /* lightning glow — links, focus, active */
+  --pixel-glow: #eae2ef; /* lightning core — bright text on dark */
+  --pixel-amber: #f2c9a0; /* window/streetlight glow — warm accent */
+
+  /* Ops dashboard (dark register) — aliases of the pixel palette, not a
+     separately hand-picked set, so "ops" and "pixel" styling can never
+     independently drift again. */
+  --ops-bg: var(--pixel-bg-0);
+  --ops-panel: var(--pixel-bg-1);
+  --ops-border: var(--pixel-border);
+  --ops-text: var(--pixel-glow);
+  --ops-text-dim: #a99bd6;
+
+  /* Citizen view (light register) — same pixel family, warm cream
+     instead of stark white, per the User Flow's own deliberate
+     dark-ops/light-citizen split (§3.5). Still one shared theme. */
+  --citizen-bg: #fbf3e7;
+  --citizen-panel: #fffaf2;
+  --citizen-border: #2b1d4a;
+  --citizen-text: #241635;
+  --citizen-text-dim: #5b4a78;
+
+  /* Typography */
+  --font-pixel-display: 'Press Start 2P', 'Courier New', monospace;
+  --font-pixel-body: 'VT323', 'Courier New', monospace;
+  --font-data: 'JetBrains Mono', ui-monospace, 'Courier New', monospace;
+
+  /* Shared pixel-bevel sizing */
+  --pixel-border-width: 3px;
+  --pixel-bevel: 4px;
 }
 
 html,
@@ -30,4 +85,193 @@ body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+body {
+  background: var(--pixel-bg-0);
+  color: var(--ops-text);
+}
+
+/* ---------------------------------------------------------------------
+ * Pixel primitives — consumed by components/pixel/*.tsx. Plain CSS
+ * (not Tailwind @apply) so the same classes work equally from a
+ * className-based page component and from the react-three-fiber scene's
+ * inline-styled overlay strips.
+ * ------------------------------------------------------------------ */
+
+.pixel-panel {
+  border-radius: 0;
+  border: var(--pixel-border-width) solid var(--pixel-border);
+  background: var(--pixel-bg-1);
+  color: var(--ops-text);
+  /* Stepped "pixel bevel": two hard offset shadows instead of a blurred
+     one — the single biggest visual tell that separates this from
+     generic soft-glassmorphism AI output. */
+  box-shadow:
+    var(--pixel-bevel) var(--pixel-bevel) 0 0 var(--pixel-bg-0),
+    calc(var(--pixel-bevel) * 2) calc(var(--pixel-bevel) * 2) 0 0 rgba(12, 9, 38, 0.55);
+}
+
+.pixel-panel--light {
+  border-color: var(--citizen-border);
+  background: var(--citizen-panel);
+  color: var(--citizen-text);
+  box-shadow:
+    var(--pixel-bevel) var(--pixel-bevel) 0 0 var(--citizen-border),
+    calc(var(--pixel-bevel) * 2) calc(var(--pixel-bevel) * 2) 0 0 rgba(43, 29, 74, 0.18);
+}
+
+.pixel-button {
+  font-family: var(--font-pixel-body);
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  border-radius: 0;
+  border: var(--pixel-border-width) solid var(--pixel-border);
+  background: var(--pixel-bg-2);
+  color: var(--ops-text);
+  padding: 0.65em 1.1em;
+  cursor: pointer;
+  box-shadow: var(--pixel-bevel) var(--pixel-bevel) 0 0 var(--pixel-bg-0);
+  /* Real cause-effect motion (UX guideline: transform/opacity only,
+     150-300ms) -- a hard shadow-collapse on press, not a soft ease,
+     matches genuine pixel-game button feedback. */
+  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+.pixel-button:hover {
+  background: var(--pixel-accent);
+  color: var(--pixel-glow);
+}
+
+.pixel-button:active {
+  transform: translate(var(--pixel-bevel), var(--pixel-bevel));
+  box-shadow: 0 0 0 0 var(--pixel-bg-0);
+}
+
+.pixel-button:focus-visible {
+  outline: 3px solid var(--pixel-glow);
+  outline-offset: 2px;
+}
+
+.pixel-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.pixel-button--primary {
+  background: var(--pixel-accent);
+  border-color: var(--pixel-glow);
+}
+
+.pixel-button--primary:hover {
+  background: var(--pixel-glow);
+  color: var(--pixel-bg-0);
+}
+
+.pixel-button--light {
+  background: var(--citizen-panel);
+  color: var(--citizen-text);
+  border-color: var(--citizen-border);
+  box-shadow: var(--pixel-bevel) var(--pixel-bevel) 0 0 var(--citizen-border);
+}
+
+.pixel-button--light:hover {
+  background: var(--citizen-border);
+  color: var(--citizen-panel);
+}
+
+.pixel-button--light:active {
+  box-shadow: 0 0 0 0 var(--citizen-border);
+}
+
+/* Severity badge — color + pixel glyph + text label, never color alone. */
+.pixel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-family: var(--font-pixel-body);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.4em 0.7em;
+  border-radius: 0;
+  border: 2px solid currentColor;
+  background: rgba(12, 9, 38, 0.55);
+  white-space: nowrap;
+}
+
+.pixel-badge--light {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* Restrained scanline texture — dark surfaces only, low opacity. Applied
+   to a `position: relative` ancestor; renders as a full-cover overlay
+   that never intercepts pointer events. */
+.pixel-scanlines {
+  position: relative;
+  isolation: isolate;
+}
+
+.pixel-scanlines::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(234, 226, 239, 0.05) 0,
+    rgba(234, 226, 239, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 1;
+}
+
+/* Sprite/icon crispness — never anti-aliased into a soft blur. */
+.pixel-crisp {
+  image-rendering: pixelated;
+}
+
+.font-pixel-display {
+  font-family: var(--font-pixel-display);
+}
+
+.font-pixel-body {
+  font-family: var(--font-pixel-body);
+}
+
+.font-data {
+  font-family: var(--font-data);
+}
+
+/* Landing hero (T4C.0): a slow, subtle Ken-Burns drift on the real hero
+   artwork -- honors the User Flow doc's own "slowly panning" motion cue
+   (§3.1) while using the real image the project owner chose instead of
+   the doc's originally-described satellite/terrain view (a disclosed,
+   deliberate deviation, not a silent one). Kept to a tiny amplitude
+   (1.0 -> 1.06 scale) over a slow 40s cycle so it reads as ambient
+   atmosphere, never a distracting animation. */
+@keyframes pixel-hero-pan {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+  50% {
+    transform: scale(1.06) translate(-1%, -1%);
+  }
+  100% {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+.pixel-hero-pan {
+  animation: pixel-hero-pan 40s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-button,
+  .pixel-hero-pan {
+    transition: none !important;
+    animation: none !important;
+  }
 }
