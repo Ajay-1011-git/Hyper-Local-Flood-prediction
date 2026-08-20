@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     # silently fall back to fabricated translated text.
     sarvam_api_key: Optional[str] = None
 
+    # T4A.3: cross-stage sources for the alert route, mirroring Stage 3's
+    # own STAGE2_SIMULATION_RESULT_BASE_URL pattern exactly (real base URL
+    # if configured/reachable, explicitly-labeled mock fallback
+    # otherwise -- never silently guessed).
+    stage2_simulation_result_base_url: Optional[str] = None
+    stage3_damage_ranking_base_url: Optional[str] = None
+    alert_cache_ttl_seconds: int = 3600  # flagged, unverified-optimal default
+
     @property
     def supported_languages_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",") if lang.strip()]

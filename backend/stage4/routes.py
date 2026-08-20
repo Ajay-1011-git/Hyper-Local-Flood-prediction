@@ -1,8 +1,202 @@
 """FastAPI routes — T4A.3.
 
-Not yet implemented. Will implement `GET /api/alert/{site_id}` (latest
-`Alert` with raw `cap_xml` and `text_by_language`) and the WebSocket relay
-endpoint `/ws/site/{site_id}` -- confirming first (per the task's own
-requirement) whether Stage 2/3's actual code already implements the
-WebSocket relay, before building a duplicate.
+`GET /api/alert/{site_id}`: assembles a real `Alert` from Stage 2's real
+`SimulationResult`, Stage 3's real `DamageRankEntry` ranking, and the
+real site polygon (`alerts/site_geometry.py`) — generates CAP-XML
+(T4A.1) and multilingual text (T4A.2), caches in Redis (the multilingual
+text involves real, paid Sarvam API calls; recomputing every request
+would be wasteful).
+
+## WebSocket relay — ALREADY EXISTS, confirmed by reading the actual code
+
+Per this task's own explicit instruction ("confirm with Stage 2/3's
+actual code whether this already exists before building a duplicate"):
+it does, twice. `backend/stage1b/routes.py` and `backend/stage2/routes.py`
+each already implement `/ws/site/{site_id}`, each its own separate
+process/`ConnectionManager` (Stage 1B relays sensor readings; Stage 2
+relays `simulation_update` + `sensor_assimilated`). Building a THIRD one
+here would be exactly the duplicate this task warns against, so this
+file does not.
+
+**Real, unresolved gap, documented honestly rather than silently assumed
+solved** (Stage 2's own `routes.py` docstring already admits the same
+thing): which single WebSocket endpoint the frontend should actually
+connect to, given 3 independent processes each with only a partial view
+of the event stream — and Stage 3's `ranking_update` event (per §B.2's
+contract) has no emitter anywhere yet either, since `damage-ranking`'s
+own route (T3.6) is a plain REST endpoint, not a broadcaster. A real
+deployment needs one gateway process or a shared Redis pub/sub (per
+TRD's own note on multi-worker broadcast). Flagged here for whoever
+builds the frontend's WebSocket client (T4B.1) to resolve.
+
+## Sources, mirroring Stage 3's own established pattern
+
+Both `SimulationResult` (from Stage 2) and `List[DamageRankEntry]` (from
+Stage 3) are fetched live if configured/reachable, else fall back to an
+explicitly-labeled mock, exactly like Stage 3's T3.6 did for Stage 2
+before it went live — `X-Simulation-Source` / `X-Ranking-Source` /
+`X-Geometry-Source` headers make all three observable.
 """
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import List, Tuple
+
+import requests
+from fastapi import FastAPI, Response
+
+from backend.stage4.alerts.cap_generator import derive_severity, derive_urgency, generate_cap_xml
+from backend.stage4.alerts.multilingual import generate_alert_text
+from backend.stage4.alerts.site_geometry import load_real_site_polygon
+from backend.stage4.config import settings
+from backend.stage4.db import get_redis_client
+from backend.stage4.shared.contracts import Alert, DamageRankEntry, NodeState, SimulationResult
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Stage 4 — Alerts")
+
+
+# ---------------------------------------------------------------------------
+# SimulationResult source (mirrors Stage 3's T3.6 pattern)
+# ---------------------------------------------------------------------------
+
+
+def _mock_simulation_result(site_id: str) -> SimulationResult:
+    """Explicitly-labeled MOCK, standing in for Stage 2's not-yet-seeded/
+    unreachable live endpoint. Deterministic per `site_id`."""
+    return SimulationResult(
+        simulation_id=f"mock-simulation-{site_id}",
+        site_id=site_id,
+        source_forecast_id=f"mock-forecast-{site_id}",
+        generated_at=datetime.now(timezone.utc),
+        # Stage 4 has no hazard_threshold_depth_m config of its own (that's
+        # Stage 2/3's concern) -- a fixed, documented default for the mock
+        # path only, matching Stage 3's own T3.0 default value.
+        hazard_threshold_m=0.3,
+        validation_error_m=0.0,
+        node_states=[
+            NodeState(
+                node_id="mock_n1", hour=24, depth_mean_m=0.9, depth_min_m=0.7,
+                depth_max_m=1.1, velocity_mean_mps=0.4, velocity_min_mps=0.3,
+                velocity_max_mps=0.5, rate_of_rise=0.04, ensemble_agreement_fraction=0.8,
+                building_id="Building_01",
+            ),
+        ],
+        envelope={},
+    )
+
+
+def _get_simulation_result(site_id: str) -> Tuple[SimulationResult, str]:
+    if settings.stage2_simulation_result_base_url:
+        url = f"{settings.stage2_simulation_result_base_url}/{site_id}"
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            return SimulationResult.model_validate(resp.json()), "stage2_live"
+        except Exception as exc:
+            logger.error(
+                "Failed to fetch real SimulationResult from Stage 2 (%s): %s "
+                "— falling back to mock fixture.",
+                url,
+                exc,
+            )
+    return _mock_simulation_result(site_id), "mock_dev_fixture"
+
+
+# ---------------------------------------------------------------------------
+# DamageRankEntry ranking source
+# ---------------------------------------------------------------------------
+
+
+def _mock_damage_ranking(site_id: str) -> List[DamageRankEntry]:
+    """Explicitly-labeled MOCK -- matches Stage 3's own real building ids
+    (Building_01/02) and mock fixture shape."""
+    return [
+        DamageRankEntry(
+            structure_id="Building_01", structure_type="building", site_id=site_id,
+            hazard_score=1.34, exposure_score=100.0, vulnerability_score=0.40,
+            vulnerability_source="mock -- Stage 3 unreachable",
+            vulnerability_is_local_calibration=False, risk_score=53.6,
+            confidence=0.8, rank=1, peak_hour=24, peak_depth_m=0.9,
+            peak_velocity_mps=0.4, peak_rate_of_rise=0.04,
+        ),
+    ]
+
+
+def _get_damage_ranking(site_id: str) -> Tuple[List[DamageRankEntry], str]:
+    if settings.stage3_damage_ranking_base_url:
+        url = f"{settings.stage3_damage_ranking_base_url}/{site_id}"
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            return [DamageRankEntry.model_validate(e) for e in resp.json()], "stage3_live"
+        except Exception as exc:
+            logger.error(
+                "Failed to fetch real damage ranking from Stage 3 (%s): %s "
+                "— falling back to mock fixture.",
+                url,
+                exc,
+            )
+    return _mock_damage_ranking(site_id), "mock_dev_fixture"
+
+
+# ---------------------------------------------------------------------------
+# T4A.3 — GET /api/alert/{site_id}
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/alert/{site_id}", response_model=Alert)
+async def get_alert(site_id: str, response: Response) -> Alert:
+    sim_result, sim_source = _get_simulation_result(site_id)
+    damage_ranking, ranking_source = _get_damage_ranking(site_id)
+
+    cache_key = f"alert:{site_id}:{sim_result.simulation_id}"
+    redis = get_redis_client()
+
+    cached = await redis.get(cache_key)
+    if cached is not None:
+        response.headers["X-Simulation-Source"] = sim_source
+        response.headers["X-Ranking-Source"] = ranking_source
+        response.headers["X-Cache"] = "hit-redis"
+        return Alert.model_validate(json.loads(cached))
+
+    site_polygon, geometry_source = load_real_site_polygon()
+
+    top_entry = damage_ranking[0] if damage_ranking else None
+    severity = derive_severity(top_entry)
+    urgency = derive_urgency(top_entry)
+    certainty_value = top_entry.confidence if top_entry is not None else 0.0
+
+    cap_xml = generate_cap_xml(damage_ranking, sim_result, site_polygon)
+    text_by_language = {
+        lang: generate_alert_text(severity, damage_ranking, lang)
+        for lang in settings.supported_languages_list
+    }
+
+    alert = Alert(
+        id=f"{site_id}-{sim_result.simulation_id}",
+        site_id=site_id,
+        generated_at=sim_result.generated_at,
+        severity=severity,
+        certainty=certainty_value,
+        urgency=urgency,
+        area_polygon=site_polygon,
+        effective_time=sim_result.generated_at,
+        expiry_time=sim_result.generated_at + timedelta(hours=72),
+        cap_xml=cap_xml,
+        text_by_language=text_by_language,
+    )
+
+    await redis.set(
+        cache_key, alert.model_dump_json(), ex=settings.alert_cache_ttl_seconds
+    )
+
+    response.headers["X-Simulation-Source"] = sim_source
+    response.headers["X-Ranking-Source"] = ranking_source
+    response.headers["X-Geometry-Source"] = geometry_source
+    response.headers["X-Cache"] = "miss"
+    return alert

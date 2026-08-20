@@ -103,7 +103,7 @@ CAP_NAMESPACE = "urn:oasis:names:tc:emergency:cap:1.2"
 _NSMAP = {None: CAP_NAMESPACE}
 
 
-def _derive_certainty(confidence: float) -> str:
+def derive_certainty(confidence: float) -> str:
     """CAP's own spec defines these as probability bands -- direct
     application, not an invented threshold. See module docstring."""
     if confidence >= 0.5:
@@ -113,7 +113,7 @@ def _derive_certainty(confidence: float) -> str:
     return "Unlikely"
 
 
-def _derive_severity(top_entry: DamageRankEntry | None) -> str:
+def derive_severity(top_entry: DamageRankEntry | None) -> str:
     """Flagged judgment call -- see module docstring."""
     if top_entry is None:
         return "Unknown"
@@ -127,7 +127,7 @@ def _derive_severity(top_entry: DamageRankEntry | None) -> str:
     return "Minor"
 
 
-def _derive_urgency(top_entry: DamageRankEntry | None) -> str:
+def derive_urgency(top_entry: DamageRankEntry | None) -> str:
     """Flagged judgment call -- see module docstring."""
     if top_entry is None:
         return "Unknown"
@@ -168,9 +168,9 @@ def generate_cap_xml(
     """
     top_entry = damage_ranking[0] if damage_ranking else None
 
-    severity = _derive_severity(top_entry)
-    urgency = _derive_urgency(top_entry)
-    certainty = _derive_certainty(top_entry.confidence if top_entry else 0.0)
+    severity = derive_severity(top_entry)
+    urgency = derive_urgency(top_entry)
+    certainty = derive_certainty(top_entry.confidence if top_entry else 0.0)
 
     effective = sim_result.generated_at
     expires = effective + timedelta(hours=72)

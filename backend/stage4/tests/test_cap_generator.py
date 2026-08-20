@@ -17,9 +17,9 @@ from lxml import etree
 
 from backend.stage4.alerts.cap_generator import (
     CAP_NAMESPACE,
-    _derive_certainty,
-    _derive_severity,
-    _derive_urgency,
+    derive_certainty,
+    derive_severity,
+    derive_urgency,
     generate_cap_xml,
 )
 from backend.stage4.shared.contracts import DamageRankEntry, SimulationResult
@@ -79,29 +79,29 @@ def _validate(xml_str: str) -> None:
 
 
 def test_certainty_matches_caps_own_probability_band_definition():
-    assert _derive_certainty(0.9) == "Likely"
-    assert _derive_certainty(0.5) == "Likely"
-    assert _derive_certainty(0.49) == "Possible"
-    assert _derive_certainty(0.01) == "Possible"
-    assert _derive_certainty(0.0) == "Unlikely"
+    assert derive_certainty(0.9) == "Likely"
+    assert derive_certainty(0.5) == "Likely"
+    assert derive_certainty(0.49) == "Possible"
+    assert derive_certainty(0.01) == "Possible"
+    assert derive_certainty(0.0) == "Unlikely"
 
 
 def test_severity_tiers_from_real_vulnerability_score():
-    assert _derive_severity(_entry(vulnerability_score=0.9)) == "Extreme"
-    assert _derive_severity(_entry(vulnerability_score=0.6)) == "Severe"
-    assert _derive_severity(_entry(vulnerability_score=0.3)) == "Moderate"
-    assert _derive_severity(_entry(vulnerability_score=0.1)) == "Minor"
-    assert _derive_severity(_entry(vulnerability_score=0.0)) == "Minor"
-    assert _derive_severity(None) == "Unknown"
+    assert derive_severity(_entry(vulnerability_score=0.9)) == "Extreme"
+    assert derive_severity(_entry(vulnerability_score=0.6)) == "Severe"
+    assert derive_severity(_entry(vulnerability_score=0.3)) == "Moderate"
+    assert derive_severity(_entry(vulnerability_score=0.1)) == "Minor"
+    assert derive_severity(_entry(vulnerability_score=0.0)) == "Minor"
+    assert derive_severity(None) == "Unknown"
 
 
 def test_urgency_tiers_from_real_peak_hour():
-    assert _derive_urgency(_entry(peak_hour=1)) == "Immediate"
-    assert _derive_urgency(_entry(peak_hour=6)) == "Immediate"
-    assert _derive_urgency(_entry(peak_hour=7)) == "Expected"
-    assert _derive_urgency(_entry(peak_hour=24)) == "Expected"
-    assert _derive_urgency(_entry(peak_hour=25)) == "Future"
-    assert _derive_urgency(None) == "Unknown"
+    assert derive_urgency(_entry(peak_hour=1)) == "Immediate"
+    assert derive_urgency(_entry(peak_hour=6)) == "Immediate"
+    assert derive_urgency(_entry(peak_hour=7)) == "Expected"
+    assert derive_urgency(_entry(peak_hour=24)) == "Expected"
+    assert derive_urgency(_entry(peak_hour=25)) == "Future"
+    assert derive_urgency(None) == "Unknown"
 
 
 # --------------------------------------------------------- real XSD validation
