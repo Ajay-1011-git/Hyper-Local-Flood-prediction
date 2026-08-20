@@ -140,3 +140,41 @@ confirmed directly with the project owner, not inferred from any document.
    implementation) was deleted, fully superseded by `site_transform.py`.
    GenCast remains explicitly out of scope and must never be reintroduced
    as a fallback for anything in Stage 2, per standing instruction.
+
+## ADDENDUM — 2026-08-20 (cont.): real DEM registered, T2.5 solver bug found on real mesh
+
+9. **Real Stage 1B DEM fetched and registered** for the real site (with
+   the user's explicit one-off permission to touch `backend/stage1b/`,
+   normally out of scope — see `backend/stage1b/CLAUDE.md`'s own
+   addendum for full detail). While doing this, found and fixed a real
+   cross-stage bug: Stage 2's own DB integration test had been silently
+   creating the shared `dem_metadata` table with an incomplete schema on
+   a fresh Postgres (calling `create_all()` on its own read-only column
+   subset before Stage 1B's real `init_models()` ever ran) — fixed the
+   live table and the test (never creates a table it doesn't own now;
+   skips cleanly if missing instead). T2.2's `find_terrain_grid_path` +
+   `interpolate_terrain` now resolve and return REAL finite elevation
+   (~118.3–119.3m at the site), not NaN.
+10. **T2.5 (`solver/shallow_water_solver.py`) was already implemented**
+    (built earlier this session, before this file's other addendum
+    entries) — a real Bates/Horritt/Fewtrell (2010) local inertial
+    solver, already tested against synthetic fixtures. Running it for
+    the first time against the REAL 7,458-node/14,737-edge VIT Vellore
+    mesh surfaced a real, genuine numerical bug the synthetic tests never
+    exercised: the per-edge flux limiter only checked each edge's
+    discharge against the smaller endpoint's available volume in
+    isolation, so a node with several simultaneously-open edges (every
+    real interior node has up to 4, vs. the synthetic tests' smaller/
+    sparser fixtures) could have them each individually judged "safe"
+    while jointly overdrawing the node in one sub-step — produced tiny
+    negative depths (~-2e-4 m), correctly caught by
+    `SolverInstabilityError` (never silently clamped). Fixed by summing
+    each node's total real outflow across ALL its edges per sub-step and
+    scaling every edge touching an over-committed node down
+    proportionally. Re-verified against the real mesh: a 3-hour real
+    rainfall trajectory (15/25/10 mm/hr) runs stably, mass conservation
+    is exact (ratio 0.999999999999998), zero depth inside any wall node,
+    and the raised `Garden_Bed_Ring` correctly shows small nonzero depth
+    from direct rainfall (not overtopping in this particular light-rain
+    trajectory — the mechanism is in place via the elevation offset, not
+    separately tested here). 55/55 tests still pass, mypy clean.

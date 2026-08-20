@@ -205,15 +205,40 @@ def run_trajectory(
                 ) / np.where(flowing, area * hydraulic_radius ** (4.0 / 3.0), 1.0)
                 new_discharge = np.where(flowing, numerator / denominator, 0.0)
 
-                # Flux limiting: an edge can't drain more water this
-                # sub-step than the upstream cell actually has.
-                max_volume_a = h_a * cell_area_m2
-                max_volume_b = h_b * cell_area_m2
-                max_flow_volume = np.minimum(max_volume_a, max_volume_b) / max(
-                    sub_dt, 1e-9
+                # Flux limiting: no NODE can drain more water this sub-step
+                # than it actually holds. A naive per-edge check (clip each
+                # edge to the smaller endpoint's available volume) is
+                # insufficient -- confirmed a REAL bug by running this
+                # solver against the real VIT Vellore mesh (T2.4's
+                # 4-connected grid: interior nodes have up to 4 open
+                # edges): several edges each individually judged "safe"
+                # can still jointly overdraw a shared node in the same
+                # sub-step, producing tiny negative depths
+                # (~-2e-4 m) that a per-edge-only limiter can't see, since
+                # no single edge exceeded its own bound. Fixed by summing
+                # each node's total real outflow across ALL its edges and
+                # scaling every edge touching an over-committed node down
+                # proportionally, so the node's total outflow this
+                # sub-step never exceeds its actual available volume.
+                outflow_from_a = np.where(new_discharge > 0, new_discharge, 0.0)  # a -> b
+                outflow_from_b = np.where(new_discharge < 0, -new_discharge, 0.0)  # b -> a
+                total_outflow = np.zeros(n_nodes, dtype=float)
+                np.add.at(total_outflow, edge_a, outflow_from_a)
+                np.add.at(total_outflow, edge_b, outflow_from_b)
+
+                available_volume = depth * cell_area_m2 / max(sub_dt, 1e-9)
+                node_scale = np.ones(n_nodes, dtype=float)
+                overdrawn = total_outflow > available_volume
+                node_scale[overdrawn] = (
+                    available_volume[overdrawn] / total_outflow[overdrawn]
                 )
-                new_discharge = np.clip(new_discharge, -max_flow_volume, max_flow_volume)
-                discharge = new_discharge
+
+                edge_scale = np.where(
+                    new_discharge > 0,
+                    node_scale[edge_a],
+                    np.where(new_discharge < 0, node_scale[edge_b], 1.0),
+                )
+                discharge = new_discharge * edge_scale
             # else: no open edges at all (fully walled mesh) -- discharge stays 0.
 
             net_flux = np.zeros(n_nodes, dtype=float)
