@@ -1,0 +1,18 @@
+# Versions pinned to latest stable on PyPI as of 2026-08-20 (verified via
+# `pip index versions <pkg>` in-session, per this project's convention).
+fastapi==0.141.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+sqlalchemy==2.0.52
+shapely==2.1.2                # T3.2/T3.3: segment/polygon geometry
+numpy==2.5.2
+pytest==9.1.1
+pytest-asyncio==1.4.0
+mypy==2.3.1
+
+# DB layer (not yet built — pinned now for reproducibility, matching
+# Stage 1B's T1B.1 precedent: asyncpg over psycopg2 since SQLAlchemy's
+# async engine needs an async-capable driver).
+asyncpg==0.31.0
+greenlet==3.5.5                # required by SQLAlchemy's async engine
+redis==8.1.0
