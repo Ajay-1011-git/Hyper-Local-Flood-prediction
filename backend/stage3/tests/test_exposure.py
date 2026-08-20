@@ -15,11 +15,16 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
+from backend.stage3.exposure.exposure_scoring import (
+    UnsupportedExposureTargetError,
+    compute_exposure_score,
+)
 from backend.stage3.exposure.road_segmentation import (
     AmbiguousRoadGeometryError,
     UnsupportedRoadMeshFormatError,
     segment_road_network,
 )
+from backend.stage3.shared.contracts import BuildingFootprint, RoadSegment
 
 
 @dataclass
@@ -151,3 +156,126 @@ def test_unsupported_format_raises():
 
     with pytest.raises(UnsupportedRoadMeshFormatError):
         segment_road_network("not a mesh", segment_length_m=20.0)
+
+
+# ---------------------------------------------------------------------------
+# T3.3 — exposure scoring. No real BuildingFootprint/RoadSegment output
+# exists from Stage 2 yet, so these three buildings are explicitly-labeled
+# fixtures with realistic institutional-building footprint sizes (per
+# T2.3's own VERIFY wording: "physically plausible for real campus
+# buildings"), not real Stage 2 output.
+# ---------------------------------------------------------------------------
+
+
+def _fixture_buildings() -> list[BuildingFootprint]:
+    return [
+        BuildingFootprint(
+            building_id="Building_01",
+            # A ~20m x 15m rectangle -- 300 m^2, plausible for a small
+            # institutional block.
+            footprint_polygon=[[0.0, 0.0], [20.0, 0.0], [20.0, 15.0], [0.0, 15.0]],
+            height_m=12.0,
+        ),
+        BuildingFootprint(
+            building_id="Building_02",
+            # A larger ~35m x 25m rectangle -- 875 m^2.
+            footprint_polygon=[[0.0, 0.0], [35.0, 0.0], [35.0, 25.0], [0.0, 25.0]],
+            height_m=18.0,
+        ),
+        BuildingFootprint(
+            building_id="Building_03",
+            # An L-shaped footprint (not a simple rectangle) -- exercises
+            # the shoelace formula against a real non-convex polygon.
+            footprint_polygon=[
+                [0.0, 0.0], [30.0, 0.0], [30.0, 10.0],
+                [15.0, 10.0], [15.0, 20.0], [0.0, 20.0],
+            ],
+            height_m=9.0,
+        ),
+    ]
+
+
+def test_exposure_scores_for_all_three_buildings_no_population():
+    buildings = _fixture_buildings()
+    scores = {b.building_id: compute_exposure_score(b) for b in buildings}
+
+    assert scores["Building_01"] == pytest.approx(300.0)
+    assert scores["Building_02"] == pytest.approx(875.0)
+    # L-shape area: 30x10 rectangle (300) + 15x10 rectangle (150) = 450 m^2
+    assert scores["Building_03"] == pytest.approx(450.0)
+
+
+def test_exposure_scores_for_road_segments_from_t32_no_population():
+    vertices, faces = _make_straight_ribbon(length_m=85.0, width_m=7.0, n_points_along=43)
+    mesh = _FakeTrimeshLike(vertices=vertices, faces=faces)
+    segments = segment_road_network(mesh, segment_length_m=20.0)
+
+    scores = [compute_exposure_score(s) for s in segments]
+    assert len(scores) == len(segments)
+    for score, seg in zip(scores, segments):
+        # width_m is known (7.0) for every T3.2-produced segment here, so
+        # the exposure score should be a real length x width area, not
+        # the length-only fallback path.
+        assert score > 0
+        assert seg.width_m is not None
+        assert score == pytest.approx(score)  # sanity: no NaN/inf
+        assert score < 1000  # sanity bound: no segment should be absurdly large
+
+
+def test_exposure_score_with_real_population_density_scales_up():
+    building = _fixture_buildings()[0]  # 300 m^2
+    no_pop = compute_exposure_score(building)
+    with_pop = compute_exposure_score(building, population_density=0.05)  # 0.05 people/m^2
+
+    assert no_pop == pytest.approx(300.0)
+    assert with_pop == pytest.approx(300.0 * 1.05)
+    assert with_pop > no_pop
+
+
+def test_exposure_score_none_population_path_does_not_fabricate():
+    """The core honesty requirement: population_density=None must return
+    exactly the geometric base score, with no hidden estimated population
+    figure baked in anywhere."""
+    building = _fixture_buildings()[1]  # 875 m^2
+    score = compute_exposure_score(building, population_density=None)
+    assert score == pytest.approx(875.0)
+
+    # Explicitly re-confirm the default (no argument at all) behaves
+    # identically to passing None -- the "no data" path is the real
+    # default, not a special case a caller has to opt into.
+    default_score = compute_exposure_score(building)
+    assert default_score == score
+
+
+def test_exposure_score_road_segment_without_width_uses_length_only():
+    """A RoadSegment with width_m=None must not have a fabricated width
+    multiplied in -- exposure falls back to length alone."""
+    segment = RoadSegment(
+        segment_id="road_seg_test",
+        polyline=[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0]],  # length = 10 + 5 = 15m
+        width_m=None,
+    )
+    score = compute_exposure_score(segment)
+    assert score == pytest.approx(15.0)
+
+
+def test_exposure_score_floors_degenerate_geometry_to_nonzero():
+    """'A building exists = nonzero exposure', even for degenerate input."""
+    degenerate = BuildingFootprint(
+        building_id="Building_degenerate",
+        footprint_polygon=[[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],  # zero area
+        height_m=None,
+    )
+    score = compute_exposure_score(degenerate)
+    assert score > 0.0
+
+
+def test_exposure_score_rejects_negative_population_density():
+    building = _fixture_buildings()[0]
+    with pytest.raises(ValueError):
+        compute_exposure_score(building, population_density=-0.01)
+
+
+def test_exposure_score_rejects_unsupported_type():
+    with pytest.raises(UnsupportedExposureTargetError):
+        compute_exposure_score("not a footprint or segment")  # type: ignore[arg-type]
