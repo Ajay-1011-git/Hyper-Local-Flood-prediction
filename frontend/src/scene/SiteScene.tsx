@@ -22,11 +22,29 @@ import type { DamageRankEntry } from '../api/types'
 import { useSiteSocket } from '../hooks/useSiteSocket'
 import { SEVERITY_ORDER, severityForEntry } from '../severity'
 import { useSceneStore } from '../store/sceneStore'
+import CameraController, { type CameraPose } from './CameraController'
 import DamageOverlay from './DamageOverlay'
 import SiteMesh from './SiteMesh'
 import Terrain from './Terrain'
 import UncertaintyEnvelope from './UncertaintyEnvelope'
 import WaterSurface from './WaterSurface'
+
+/**
+ * The scene's two real resting poses (T4B.8) — module-level constants so
+ * `CameraController` sees stable object identity across `SiteScene`'s
+ * frequent re-renders (wetVertexCount/siteMeshSource/etc. all change
+ * often; a fresh literal every render would be harmless but wasteful).
+ *
+ * `REGIONAL` matches T4B.3's original "opens wide" camera prop exactly.
+ * `SITE` is a close, oblique view over the real building/road cluster
+ * (SiteMesh's own real coordinates: Building_01/02 span roughly
+ * x:[-53,122], z:[-63,66]; mesh-node elevations run ~117-138) — the real
+ * site patch this project actually registers, not the User Flow doc's
+ * stated "50m×50m" figure (see CameraController's own docstring for that
+ * disclosed discrepancy).
+ */
+const REGIONAL_CAMERA_POSE: CameraPose = { position: [700, 520, 700], target: [0, 120, 0] }
+const SITE_CAMERA_POSE: CameraPose = { position: [110, 140, 160], target: [25, 128, 0] }
 
 /** Real, human-readable summary of the current worst structure's real
  *  severity at this hour — matches DamageOverlay's own per-entry logic,
@@ -106,6 +124,18 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
     if (damageRankingData) setDamageRanking(damageRankingData)
   }, [damageRankingData, setDamageRanking])
 
+  // Real camera fly-in/fly-out (T4B.8) — `flyTrigger` is bumped by the
+  // button below; CameraController toggles regional<->site each time.
+  const [flyTrigger, setFlyTrigger] = useState(0)
+  const [atSite, setAtSite] = useState(false)
+  const [flyProgress, setFlyProgress] = useState<{ progress: number; flyingToSite: boolean } | null>(
+    null,
+  )
+  const handleFlyProgress = (progress: number, flyingToSite: boolean) => {
+    setFlyProgress({ progress, flyingToSite })
+    if (progress >= 1) setTimeout(() => setFlyProgress(null), 300)
+  }
+
   if (isPending) {
     return <div data-testid="terrain-loading">Loading terrain…</div>
   }
@@ -144,7 +174,17 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
         <WaterSurface siteId={siteId} onWetVertexCountChange={setWetVertexCount} />
         <UncertaintyEnvelope siteId={siteId} />
         <DamageOverlay siteId={siteId} />
-        <OrbitControls makeDefault target={[0, 120, 0]} />
+        {/* No static `target` prop here (T4B.8): CameraController now owns
+            the camera's resting pose AND its animated transitions, and a
+            static prop re-applied every SiteScene render would fight its
+            imperative `controls.target` updates mid-flight. */}
+        <OrbitControls makeDefault />
+        <CameraController
+          regional={REGIONAL_CAMERA_POSE}
+          site={SITE_CAMERA_POSE}
+          trigger={flyTrigger}
+          onProgress={handleFlyProgress}
+        />
       </Canvas>
 
       {/* Honesty disclosure, per Stage 4's CLAUDE.md ground truth: this
@@ -242,6 +282,59 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           </button>
         </div>
       )}
+
+      {/* T4B.8 — "A single click ... smoothly flies the camera down into
+          the scanned site" (User Flow §3.2). A dedicated button, not a
+          bare canvas click: OrbitControls already treats a click-drag as
+          orbiting, and disambiguating a plain click from the start of a
+          drag reliably is a real UX problem this task doesn't need to
+          also solve. */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 6,
+        }}
+      >
+        <button
+          type="button"
+          data-testid="fly-camera"
+          onClick={() => {
+            setFlyTrigger((n) => n + 1)
+            setAtSite((was) => !was)
+          }}
+          style={{
+            font: '12px system-ui, sans-serif',
+            color: '#cbd5e1',
+            background: 'rgba(11,16,32,0.72)',
+            padding: '6px 10px',
+            borderRadius: 6,
+            border: '1px solid rgba(203,213,225,0.3)',
+            cursor: 'pointer',
+          }}
+        >
+          {atSite ? 'Fly to region ▸' : 'Fly to site ▸'}
+        </button>
+        {flyProgress && (
+          <div
+            data-testid="fly-progress"
+            style={{
+              font: '11px system-ui, sans-serif',
+              color: '#cbd5e1',
+              background: 'rgba(11,16,32,0.72)',
+              padding: '4px 8px',
+              borderRadius: 6,
+            }}
+          >
+            {flyProgress.flyingToSite ? 'Flying to site…' : 'Flying to region…'}{' '}
+            {Math.round(flyProgress.progress * 100)}%
+          </div>
+        )}
+      </div>
     </div>
   )
 }
