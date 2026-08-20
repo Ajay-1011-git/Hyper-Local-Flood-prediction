@@ -51,9 +51,18 @@ class Settings(BaseSettings):
     dem_raster_storage_dir: str = "./data/dem"
 
     # ---- Target site ----
-    target_site_id: str = "vellore_demo_site_01"
-    target_site_lat: Optional[float] = None
-    target_site_lon: Optional[float] = None
+    # 2026-08-20: standardized to "vit-vellore" and the real GLB-surveyed
+    # anchor coordinates (anchor_point.json's "primary" anchor, T4 unified
+    # fit -- backend/stage2/blender_prep/output/anchor_point.json) across
+    # all four stages, per explicit project-owner decision during a
+    # full-system wiring audit. Previously "vellore_demo_site_01" /
+    # (12.9165, 79.1325) -- a placeholder site_id and a stale coordinate
+    # ~6km from the real site, predating the real 3D model (flagged by
+    # Stage 2's own session in stage1b/CLAUDE.md's addendum, left for
+    # this module's owner to decide -- this is that decision).
+    target_site_id: str = "vit-vellore"
+    target_site_lat: Optional[float] = 12.969223
+    target_site_lon: Optional[float] = 79.155934
 
     # ---- Sensor ingestion ----
     sensor_ingest_token: Optional[str] = None
