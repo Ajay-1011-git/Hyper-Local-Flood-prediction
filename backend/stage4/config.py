@@ -23,10 +23,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://localhost:5432/floodsystem"
     redis_url: str = "redis://localhost:6379/0"
 
-    # Confirmed and filled in during T4A.1 once the real CAP/SACHET schema
-    # is looked up in-session -- left blank (not guessed) until then, per
-    # this project's anti-hallucination discipline.
-    sachet_schema_version: Optional[str] = None
+    # Confirmed real (T4A.1): SACHET (NDMA/C-DOT's national CAP alerting
+    # platform) uses plain, unmodified OASIS CAP 1.2 -- no SACHET-specific
+    # schema variant or custom namespace, per a live web search + a
+    # specific technical writeup quoting real SACHET CAP feed output.
+    sachet_schema_version: Optional[str] = "1.2"
 
     # English + Tamil at minimum, per PRD NFR-6. A plain comma-separated
     # string (not a list) so it round-trips through .env without needing

@@ -16,6 +16,9 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 mypy==2.3.1
 
-# T4A.1's XML library: deliberately NOT pinned here yet -- the task's own
-# scope is to confirm the right one (e.g. lxml) in-session before writing
-# any CAP-XML generation code, not assume it at scaffolding time.
+
+# T4A.1: confirmed real CAP 1.2 schema needs real XSD-validation
+# capability (not just string generation) -- lxml.etree supports
+# XMLSchema validation directly, stdlib xml.etree does not.
+lxml==6.1.2
+lxml-stubs==0.5.1
