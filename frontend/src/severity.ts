@@ -94,3 +94,33 @@ export function severityForEntry(
   if (normalized >= 0.25) return 'Watch'
   return 'Monitoring'
 }
+
+/**
+ * Maps a real CAP severity enum value (Extreme/Severe/Moderate/Minor/
+ * Unknown — `backend/stage4/alerts/cap_generator.py::derive_severity`)
+ * to this app's own four-state UI vocabulary, for display in the
+ * Citizen View (T4C.4) and Alert Composer (T4C.3) previews.
+ *
+ * A DISCLOSED, PRESENTATION-ONLY MAPPING, NOT CAP's OWN FIELD
+ * ---------------------------------------------------------------
+ * CAP's severity enum and this app's Monitoring/Watch/Warning/Critical
+ * vocabulary are two real, different, independently-defined taxonomies
+ * (see this file's own module docstring) — this mapping exists only so
+ * a real `Alert.severity` value has SOME real color/label to show in UI
+ * built around the app's own palette. Both `AlertComposer.tsx` and
+ * `CitizenView.tsx` import this SAME function rather than each picking
+ * their own mapping, so the two previews of "what a citizen would see"
+ * can never independently disagree.
+ */
+export function capSeverityToUiSeverity(capSeverity: string): SeverityState {
+  switch (capSeverity) {
+    case 'Extreme':
+      return 'Critical'
+    case 'Severe':
+      return 'Warning'
+    case 'Moderate':
+      return 'Watch'
+    default:
+      return 'Monitoring'
+  }
+}

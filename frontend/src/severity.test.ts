@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SEVERITY_COLORS, SEVERITY_ORDER, severityForEntry } from './severity'
+import { SEVERITY_COLORS, SEVERITY_ORDER, capSeverityToUiSeverity, severityForEntry } from './severity'
 
 describe('severityForEntry', () => {
   it('stays Monitoring before the structure reaches its real peak_hour', () => {
@@ -41,5 +41,19 @@ describe('severityForEntry', () => {
     for (const state of SEVERITY_ORDER) {
       expect(SEVERITY_COLORS[state]).toMatch(/^#[0-9a-f]{6}$/i)
     }
+  })
+})
+
+describe('capSeverityToUiSeverity', () => {
+  it('maps every real CAP severity enum value to a real UI state', () => {
+    expect(capSeverityToUiSeverity('Extreme')).toBe('Critical')
+    expect(capSeverityToUiSeverity('Severe')).toBe('Warning')
+    expect(capSeverityToUiSeverity('Moderate')).toBe('Watch')
+    expect(capSeverityToUiSeverity('Minor')).toBe('Monitoring')
+  })
+
+  it('falls back to Monitoring for Unknown/unexpected values, never throws', () => {
+    expect(capSeverityToUiSeverity('Unknown')).toBe('Monitoring')
+    expect(capSeverityToUiSeverity('something-unexpected')).toBe('Monitoring')
   })
 })

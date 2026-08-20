@@ -16,9 +16,9 @@
  * `cap_generator.py::derive_severity`), NOT this app's own four-state UI
  * vocabulary (Monitoring/Watch/Warning/Critical, `severity.ts`). The
  * preview's status band maps CAP -> UI vocabulary for display, a
- * disclosed approximation of what the real (not-yet-built, T4C.4)
- * Citizen View would show — never presented as if it were CAP's own
- * severity field.
+ * disclosed approximation of what the real Citizen View (T4C.4) shows —
+ * both import the SAME `severity.ts::capSeverityToUiSeverity` mapping,
+ * never presented as if it were CAP's own severity field.
  */
 
 import { useState } from 'react'
@@ -30,23 +30,9 @@ import CapXmlViewer from '../components/CapXmlViewer'
 import PixelButton from '../components/pixel/PixelButton'
 import PixelPanel from '../components/pixel/PixelPanel'
 import { LANGUAGES } from '../languages'
-import { SEVERITY_COLORS, type SeverityState } from '../severity'
+import { SEVERITY_COLORS, capSeverityToUiSeverity } from '../severity'
 
 const SITE_ID = import.meta.env.VITE_SITE_ID ?? 'vit-vellore'
-
-/** A disclosed, presentation-only mapping — see module docstring. */
-function mapCapSeverityToUiSeverity(capSeverity: string): SeverityState {
-  switch (capSeverity) {
-    case 'Extreme':
-      return 'Critical'
-    case 'Severe':
-      return 'Warning'
-    case 'Moderate':
-      return 'Watch'
-    default:
-      return 'Monitoring'
-  }
-}
 
 type DispatchState = 'idle' | 'sending' | 'sent'
 
@@ -148,7 +134,7 @@ export function AlertComposer() {
               <div
                 data-testid="citizen-preview-band"
                 style={{
-                  background: SEVERITY_COLORS[mapCapSeverityToUiSeverity(alert.severity)],
+                  background: SEVERITY_COLORS[capSeverityToUiSeverity(alert.severity)],
                   color: '#0c0926',
                   padding: '0.5em 0.75em',
                   marginBottom: '0.75rem',

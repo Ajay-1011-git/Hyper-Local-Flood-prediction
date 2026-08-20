@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import About from './pages/About'
 import AlertComposer from './pages/AlertComposer'
+import CitizenGuidance from './pages/CitizenGuidance'
 import CitizenView from './pages/CitizenView'
 import Dashboard from './pages/Dashboard'
 import Landing from './pages/Landing'
@@ -13,9 +14,11 @@ import SiteDetail from './pages/SiteDetail'
  * doc's own information architecture (§2): `/` Landing, `/dashboard`
  * Operations (with a real nested `site/:structureId` slide-over, T4C.2),
  * `/dashboard/alert` Alert Composer (T4C.3 — its own full page, not a
- * slide-over, per §3.4's two-column layout), `/citizen` Citizen access,
- * `/about` methodology. `/citizen`/`/about` are still clearly-labeled
- * placeholders for T4C.4/T4C.6 — see each page's own docstring.
+ * slide-over, per §3.4's two-column layout), `/citizen` Citizen access
+ * (T4C.4, fully built), `/citizen/guidance` its secondary sub-page, and
+ * `/about` methodology. `/citizen/guidance`/`/about` are still
+ * clearly-labeled placeholders for T4C.5/T4C.6 — see each page's own
+ * docstring.
  */
 export default function App() {
   return (
@@ -27,6 +30,7 @@ export default function App() {
         </Route>
         <Route path="/dashboard/alert" element={<AlertComposer />} />
         <Route path="/citizen" element={<CitizenView />} />
+        <Route path="/citizen/guidance" element={<CitizenGuidance />} />
         <Route path="/about" element={<About />} />
       </Routes>
     </BrowserRouter>
