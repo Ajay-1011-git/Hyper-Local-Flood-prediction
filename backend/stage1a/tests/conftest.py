@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 from typing import AsyncIterator
 
 import pytest
@@ -59,27 +60,45 @@ def _redis_reachable() -> bool:
     return asyncio.run(_check())
 
 
-#: Opt-in gate for tests that make REAL calls to third-party services
-#: (the National Water Data Portal, NOAA NOMADS, ...).
+#: Gate for tests that make REAL calls to third-party services (the
+#: National Water Data Portal, NOAA NOMADS/S3, ...).
 #:
-#: 2026-08-20: made opt-in rather than "run whenever the host happens to be
-#: reachable". Those tests are real and worth keeping — but they made the
-#: default suite take ~2 minutes, and their outcome depended on a
-#: government portal's live availability rather than on this project's own
-#: code, which is exactly what T1A.12's "mock all external network calls in
-#: automated tests" rule exists to avoid. Local infrastructure (PostgreSQL,
-#: Redis) is NOT gated this way — it's this project's own stack, not a
-#: third party, and `requires_postgres`/`requires_redis` below still probe
-#: it directly.
+#: 2026-08-20: these run BY DEFAULT again, at the project owner's request,
+#: after confirming the CWC portal really does pass (5/5 in 44.5s). They
+#: were briefly opt-in earlier the same day because the portal had failed
+#: with a read timeout and was making the suite take ~2 minutes.
 #:
-#: Run them explicitly with:
-#:     RUN_LIVE_NETWORK_TESTS=1 pytest tests/
-_LIVE_NETWORK_TESTS_ENABLED = os.getenv("RUN_LIVE_NETWORK_TESTS") == "1"
+#: Two real escape hatches remain, for two different real situations:
+#:  * `SKIP_LIVE_NETWORK_TESTS=1` — skip them explicitly. They add ~45s to
+#:    an otherwise ~3s suite, and the portal HAS been observed timing out
+#:    and then recovering on identical code, so a fast/hermetic run is
+#:    sometimes what you want.
+#:  * Host unreachable — skipped automatically, so the suite does not
+#:    hard-fail with no internet. This matters concretely: TRD §3.6
+#:    requires the system to run fully on a single laptop with no live
+#:    internet dependency on demo day.
+#:
+#: Local infrastructure (PostgreSQL, Redis) is NOT gated this way — it's
+#: this project's own stack, not a third party.
+_LIVE_NETWORK_DISABLED = os.getenv("SKIP_LIVE_NETWORK_TESTS") == "1"
 
-requires_live_network = pytest.mark.skipif(
-    not _LIVE_NETWORK_TESTS_ENABLED,
-    reason="Live third-party network tests are opt-in; set RUN_LIVE_NETWORK_TESTS=1 to run them",
-)
+
+def _host_reachable(host: str, port: int = 443, timeout: float = 5.0) -> bool:
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def requires_live_host(host: str, port: int = 443) -> pytest.MarkDecorator:
+    """Skip unless live-network tests are enabled AND `host` is reachable."""
+    if _LIVE_NETWORK_DISABLED:
+        return pytest.mark.skip(reason="SKIP_LIVE_NETWORK_TESTS=1 is set")
+    return pytest.mark.skipif(
+        not _host_reachable(host, port),
+        reason=f"{host} not reachable from this environment",
+    )
 
 
 requires_postgres = pytest.mark.skipif(

@@ -6,17 +6,19 @@ import pytest
 
 from stage1a.cwc.client import KNOWN_RELEVANT_RESOURCES, fetch_station_data, fetch_station_list
 from stage1a.cwc.errors import CWCUnavailableError
-from stage1a.tests.conftest import requires_live_network
+from stage1a.tests.conftest import requires_live_host
 
 #: These three tests make REAL calls to the National Water Data Portal.
-#: They are kept (they're genuine, and they're the only thing that proves
-#: the real CWC integration still works), but are now OPT-IN rather than
-#: "run whenever the portal happens to be reachable" — they dominated the
-#: default suite's runtime (~2 min) and their result depended on a
-#: government portal's live availability rather than on this code. See
-#: `tests/conftest.py`'s `requires_live_network` for the rationale and how
-#: to run them (`RUN_LIVE_NETWORK_TESTS=1 pytest tests/`).
-requires_live_portal = requires_live_network
+#: They run BY DEFAULT (confirmed working 2026-08-20: 5/5 in 44.5s), skip
+#: automatically when the portal is unreachable, and can be skipped
+#: explicitly with `SKIP_LIVE_NETWORK_TESTS=1` — see `tests/conftest.py`'s
+#: `requires_live_host` for why both escape hatches exist.
+#:
+#: Known real flakiness, not a code defect: this portal was observed
+#: timing out (`read operation timed out`) and then passing ~25 minutes
+#: later on identical code. If one of these fails, re-run before
+#: investigating this repo.
+requires_live_portal = requires_live_host("nwdp.nwic.gov.in")
 
 
 def test_known_resources_are_documented() -> None:
