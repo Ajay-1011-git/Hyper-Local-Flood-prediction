@@ -70,6 +70,11 @@ from backend.stage4.shared.contracts import (
     SimulationResult,
     SiteTerrainResponse,
 )
+from backend.stage4.scene.mesh_nodes import (
+    MeshNodesUnavailableError,
+    SiteMeshNodesResponse,
+    build_site_mesh_nodes,
+)
 from backend.stage4.scene.site_mesh import build_site_mesh_glb
 from backend.stage4.terrain.dem_proxy import TerrainUnavailableError, build_site_terrain
 
@@ -252,6 +257,33 @@ async def get_site_mesh(site_id: str) -> Response:
         media_type="model/gltf-binary",
         headers={"X-Site-Mesh-Source": source},
     )
+
+
+# ---------------------------------------------------------------------------
+# T4B.5 — GET /api/mesh-nodes/{site_id}
+#
+# Real per-node positions for Stage 2's computational mesh -- see
+# scene/mesh_nodes.py's module docstring for the reconstruction (and a
+# real, confirmed bug found in Stage 2's own interpolate_terrain, worked
+# around here rather than patched there per this stage's module boundary).
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/mesh-nodes/{site_id}", response_model=SiteMeshNodesResponse)
+async def get_mesh_nodes(site_id: str) -> SiteMeshNodesResponse:
+    """Real node_id -> (x_m, z_m, elevation_m) for every computational-mesh
+    node, in Terrain.tsx's scene frame -- lets the water surface (T4B.5)
+    displace real vertices by each node's real NodeState.depth_mean_m.
+
+    Raises:
+        503: real GLB/anchor/DEM data unavailable. Never returns a
+            fabricated grid — see MeshNodesUnavailableError's own docs.
+    """
+    try:
+        return await build_site_mesh_nodes(site_id)
+    except MeshNodesUnavailableError as exc:
+        logger.error("Mesh nodes unavailable for %s: %s", site_id, exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

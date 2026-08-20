@@ -30,6 +30,7 @@ import type {
   RegionalEnsembleForecast,
   SensorReading,
   SimulationResult,
+  SiteMeshNodesResponse,
   SiteTerrainResponse,
 } from './types'
 
@@ -160,6 +161,16 @@ export function siteMeshUrl(siteId: string): string {
   return `${STAGE_BASE_URLS.stage4}/api/site-mesh/${encodeURIComponent(siteId)}`
 }
 
+/**
+ * Real per-node `(x_m, z_m, elevation_m)` for Stage 2's computational
+ * mesh (T4B.5) — see `backend/stage4/scene/mesh_nodes.py`'s docstring.
+ * Unlike site-mesh, this has no placeholder fallback: a 503 here means
+ * genuinely no real node positions exist, never a fabricated grid.
+ */
+export function fetchSiteMeshNodes(siteId: string): Promise<SiteMeshNodesResponse> {
+  return getJson(`${STAGE_BASE_URLS.stage4}/api/mesh-nodes/${encodeURIComponent(siteId)}`)
+}
+
 // ------------------------------------------------- TanStack Query helpers
 
 /** Query keys, centralised so a cache invalidation can't typo a key. */
@@ -172,4 +183,5 @@ export const queryKeys = {
   alert: (siteId: string) => ['alert', siteId] as const,
   siteTerrain: (siteId: string) => ['siteTerrain', siteId] as const,
   siteMesh: (siteId: string) => ['siteMesh', siteId] as const,
+  meshNodes: (siteId: string) => ['meshNodes', siteId] as const,
 }

@@ -12,14 +12,16 @@
  * rather than an empty canvas or a fake flat ground plane.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useQuery } from '@tanstack/react-query'
 
-import { fetchSiteTerrain, queryKeys } from '../api/client'
+import { fetchSimulationResult, fetchSiteTerrain, queryKeys } from '../api/client'
+import { useSceneStore } from '../store/sceneStore'
 import SiteMesh from './SiteMesh'
 import Terrain from './Terrain'
+import WaterSurface from './WaterSurface'
 
 export interface SiteSceneProps {
   siteId: string
@@ -35,6 +37,26 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
     staleTime: Infinity,
   })
   const [siteMeshSource, setSiteMeshSource] = useState<string | null>(null)
+  const [wetVertexCount, setWetVertexCount] = useState(0)
+
+  // Real simulation load (T4B.5) — Stage 2's own `/api/simulation/site`
+  // 404s until something real has been precomputed for this site (that
+  // pipeline has no live caller anywhere in this repo, confirmed this
+  // session), so `error` here is a genuine, common, non-fatal case: the
+  // scene just has no water to show yet, not a crash.
+  const loadSimulationResult = useSceneStore((s) => s.loadSimulationResult)
+  const currentHour = useSceneStore((s) => s.currentHour)
+  const hoursAvailable = useSceneStore((s) => s.hoursAvailable)
+  const setCurrentHour = useSceneStore((s) => s.setCurrentHour)
+  const { data: simulationResult, error: simulationError } = useQuery({
+    queryKey: queryKeys.simulation(siteId),
+    queryFn: () => fetchSimulationResult(siteId),
+    staleTime: Infinity,
+    retry: false,
+  })
+  useEffect(() => {
+    if (simulationResult) loadSimulationResult(simulationResult)
+  }, [simulationResult, loadSimulationResult])
 
   if (isPending) {
     return <div data-testid="terrain-loading">Loading terrain…</div>
@@ -71,6 +93,7 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           wireframe={wireframe}
         />
         <SiteMesh siteId={siteId} onSourceChange={setSiteMeshSource} />
+        <WaterSurface siteId={siteId} onWetVertexCountChange={setWetVertexCount} />
         <OrbitControls makeDefault target={[0, 120, 0]} />
       </Canvas>
 
@@ -102,7 +125,62 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
           : siteMeshSource === 'real_glb'
             ? ' Buildings/roads: real site GLB.'
             : ''}
+        {' '}
+        {simulationResult
+          ? `Water: ${wetVertexCount} node(s) wet at hour ${currentHour}.`
+          : simulationError
+            ? 'Water: no live simulation for this site yet.'
+            : 'Water: loading simulation…'}
       </div>
+
+      {/* Minimal timeline control for T4B.5's own VERIFY (rising/falling
+          across hours) -- the full TimelineScrubber component is T4C's
+          own dashboard task; this is only enough to move `currentHour`
+          for now. */}
+      {hoursAvailable.length > 1 && (
+        <div
+          data-testid="hour-scrubber"
+          style={{
+            position: 'absolute',
+            right: 12,
+            bottom: 12,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            font: '12px system-ui, sans-serif',
+            color: '#cbd5e1',
+            background: 'rgba(11,16,32,0.72)',
+            padding: '6px 10px',
+            borderRadius: 6,
+          }}
+        >
+          <button
+            type="button"
+            data-testid="hour-prev"
+            onClick={() =>
+              setCurrentHour(
+                hoursAvailable[Math.max(0, hoursAvailable.indexOf(currentHour) - 1)] ?? currentHour,
+              )
+            }
+          >
+            ◀
+          </button>
+          <span>hour {currentHour}</span>
+          <button
+            type="button"
+            data-testid="hour-next"
+            onClick={() =>
+              setCurrentHour(
+                hoursAvailable[
+                  Math.min(hoursAvailable.length - 1, hoursAvailable.indexOf(currentHour) + 1)
+                ] ?? currentHour,
+              )
+            }
+          >
+            ▶
+          </button>
+        </div>
+      )}
     </div>
   )
 }

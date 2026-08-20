@@ -6,6 +6,7 @@ import {
   fetchDamageRanking,
   fetchDownscaledForecast,
   fetchSimulationResult,
+  fetchSiteMeshNodes,
   queryKeys,
   siteMeshUrl,
 } from './client'
@@ -90,6 +91,15 @@ describe('endpoint paths match the real backend routes', () => {
 
   it('encodes a site id in the site-mesh URL', () => {
     expect(siteMeshUrl('site with spaces')).toContain('site%20with%20spaces')
+  })
+
+  it('builds the Stage 4 mesh-nodes URL with the real path (T4B.5)', async () => {
+    const spy = stubFetch({ site_id: 'x', rows: 1, cols: 1, resolution_m: 1, nodes: [] })
+    await fetchSiteMeshNodes('vit-vellore')
+    expect(spy).toHaveBeenCalledWith(
+      `${STAGE_BASE_URLS.stage4}/api/mesh-nodes/vit-vellore`,
+      undefined,
+    )
   })
 })
 

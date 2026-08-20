@@ -77,6 +77,32 @@ export interface TerrainHeightmap {
   nodata_cell_count: number
 }
 
+/**
+ * Stage 4 — `backend/stage4/scene/mesh_nodes.py::MeshNodePosition` (T4B.5).
+ *
+ * One real Stage 2 `ComputationalMeshNode`'s position, reconstructed by
+ * Stage 4 (see that module's docstring for why/how) in the EXACT scene
+ * frame `Terrain.tsx`/`SiteMesh.tsx` already use: `x_m`=east, `z_m`=-north,
+ * `elevation_m`=real absolute elevation (world Y). `node_id` matches the
+ * real `NodeState.node_id` the live simulation emits (`"n_{row}_{col}"`),
+ * so `WaterSurface.tsx` can look up each vertex's live depth by this id.
+ */
+export interface MeshNodePosition {
+  node_id: string
+  x_m: number
+  z_m: number
+  elevation_m: number
+}
+
+/** Stage 4 — `GET /api/mesh-nodes/{site_id}` (T4B.5). */
+export interface SiteMeshNodesResponse {
+  site_id: string
+  rows: number
+  cols: number
+  resolution_m: number
+  nodes: MeshNodePosition[]
+}
+
 /** Stage 4 — `GET /api/terrain/{site_id}` (T4B.3). */
 export interface SiteTerrainResponse {
   site_id: string

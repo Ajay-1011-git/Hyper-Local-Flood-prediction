@@ -31,3 +31,10 @@ lxml-stubs==0.5.1
 # Same trimesh version Stage 2's own glb_loader.py confirms in-session
 # (its module docstring: "API CONFIRMED IN-SESSION (trimesh 5.0.0)").
 trimesh==5.0.0
+
+# ---- T4B.5: mesh-node position proxy (cross-imports Stage 2's real
+# computational_mesh.py, which itself depends on shapely for point-in-
+# polygon wall/road tagging -- needed transitively even though this
+# module passes footprints=[]). Latest stable, matching this project's
+# "pin what's confirmed working this session" convention.
+shapely==2.1.2
