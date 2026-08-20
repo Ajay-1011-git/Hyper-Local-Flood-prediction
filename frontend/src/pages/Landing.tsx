@@ -19,7 +19,7 @@
 
 import { Link } from 'react-router-dom'
 
-import heroUrl from '../assets/flood-city-hero.jpg'
+import heroUrl from '../assets/flood-city-hero.png'
 import PixelButton from '../components/pixel/PixelButton'
 import PixelIcon from '../components/pixel/PixelIcon'
 import SeverityBadge from '../components/SeverityBadge'
