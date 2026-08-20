@@ -1,4 +1,5 @@
-"""Tests for DEM interpolation and Stage 1B terrain lookup (T2.2)."""
+"""Tests for DEM interpolation and footprint extraction (T2.2/T2.3, amended
+2026-08-20 for the real SiteTransform-based georeferencing)."""
 
 from __future__ import annotations
 
@@ -8,24 +9,15 @@ import numpy as np
 import pytest
 import trimesh
 
-from stage2.shared.contracts import AnchorPoint
 from stage2.terrain.dem_interpolation import (
     compute_site_bbox_latlon,
     interpolate_terrain,
 )
-from stage2.terrain.errors import AmbiguousNorthAxisError, Stage1BTerrainUnavailableError
+from stage2.terrain.errors import Stage1BTerrainUnavailableError
 from stage2.tests.conftest import requires_postgres
-from stage2.tests.fixtures import write_synthetic_terrain_geotiff
+from stage2.tests.fixtures import synthetic_site_transform, write_synthetic_terrain_geotiff
 
-VELLORE_ANCHOR = AnchorPoint(
-    scene_object_name="Anchor",
-    scene_local_position=[0.0, 0.0, 0.0],
-    real_world_lat=12.9165,
-    real_world_lon=79.1325,
-    real_world_elevation_m=216.0,
-    scene_to_real_scale_factor=1.0,
-    north_axis="+Y",
-)
+SITE_TRANSFORM = synthetic_site_transform()
 
 
 def _building(extents: list[float]) -> dict[str, trimesh.Trimesh]:
@@ -35,39 +27,35 @@ def _building(extents: list[float]) -> dict[str, trimesh.Trimesh]:
 # --------------------------------------------------------- axis mapping
 
 
-def test_north_y_positive_offset_increases_latitude() -> None:
+def test_bbox_grows_around_reference_point_with_object_extent() -> None:
+    """A box centered at the scene origin (which maps to `ref_lat`/`ref_lon`)
+    should straddle the reference point on both lat and lon."""
     objects = _building([2.0, 2.0, 2.0])  # centered at origin, extends +/-1 on each axis
-    min_lat, max_lat, min_lon, max_lon = compute_site_bbox_latlon(objects, VELLORE_ANCHOR)
-    assert max_lat > VELLORE_ANCHOR.real_world_lat > min_lat
-    assert max_lon > VELLORE_ANCHOR.real_world_lon > min_lon
+    min_lat, max_lat, min_lon, max_lon = compute_site_bbox_latlon(objects, SITE_TRANSFORM)
+    assert max_lat > SITE_TRANSFORM.ref_lat > min_lat
+    assert max_lon > SITE_TRANSFORM.ref_lon > min_lon
 
 
-def test_bbox_area_scales_with_scale_factor() -> None:
-    objects = _building([2.0, 2.0, 2.0])
-    small = VELLORE_ANCHOR
-    large = VELLORE_ANCHOR.model_copy(update={"scene_to_real_scale_factor": 10.0})
+def test_bbox_area_scales_with_object_extent() -> None:
+    small_objects = _building([2.0, 2.0, 2.0])
+    large_objects = _building([20.0, 2.0, 20.0])
 
-    small_bbox = compute_site_bbox_latlon(objects, small)
-    large_bbox = compute_site_bbox_latlon(objects, large)
+    small_bbox = compute_site_bbox_latlon(small_objects, SITE_TRANSFORM)
+    large_bbox = compute_site_bbox_latlon(large_objects, SITE_TRANSFORM)
 
     small_span = small_bbox[1] - small_bbox[0]
     large_span = large_bbox[1] - large_bbox[0]
     assert large_span == pytest.approx(small_span * 10.0, rel=1e-6)
 
 
-def test_all_four_axis_alignments_are_handled() -> None:
-    objects = _building([2.0, 2.0, 2.0])
-    for axis in ["+X", "-X", "+Y", "-Y"]:
-        anchor = VELLORE_ANCHOR.model_copy(update={"north_axis": axis})
-        bbox = compute_site_bbox_latlon(objects, anchor)
-        assert bbox[0] < bbox[1] and bbox[2] < bbox[3]
-
-
-def test_unsupported_north_axis_raises_typed_error() -> None:
-    objects = _building([2.0, 2.0, 2.0])
-    anchor = VELLORE_ANCHOR.model_copy(update={"north_axis": "+Z"})
-    with pytest.raises(AmbiguousNorthAxisError, match=r"\+Z"):
-        compute_site_bbox_latlon(objects, anchor)
+def test_bbox_is_ground_plane_only_height_ignored() -> None:
+    """glTF Y-up: only (X, Z) determine the footprint bbox -- a taller box
+    with the same footprint must give the identical bbox."""
+    short = _building([4.0, 2.0, 4.0])
+    tall = _building([4.0, 200.0, 4.0])
+    assert compute_site_bbox_latlon(short, SITE_TRANSFORM) == compute_site_bbox_latlon(
+        tall, SITE_TRANSFORM
+    )
 
 
 # ------------------------------------------------------ terrain interpolation
@@ -172,14 +160,14 @@ async def test_find_terrain_grid_path_real_db_round_trip() -> None:
 def test_extracts_plausible_footprint_and_height() -> None:
     from stage2.terrain.footprint_extraction import extract_building_footprints
 
-    buildings = {"Building_01": trimesh.creation.box(extents=[8.0, 6.0, 12.0])}
-    footprints = extract_building_footprints(buildings, VELLORE_ANCHOR)
+    buildings = {"Building_01": trimesh.creation.box(extents=[8.0, 12.0, 6.0])}  # Y-up: 12=height
+    footprints = extract_building_footprints(buildings, SITE_TRANSFORM)
 
     assert len(footprints) == 1
     fp = footprints[0]
     assert fp.building_id == "Building_01"
     assert fp.height_m == pytest.approx(12.0)
-    # area of an 8x6 box's footprint should be close to 48 m^2
+    # area of an 8x6 (X x Z) box's footprint should be close to 48 m^2
     from shapely.geometry import Polygon
 
     area = Polygon(fp.footprint_polygon).area
@@ -192,8 +180,8 @@ def test_footprint_area_sane_relative_to_raw_bounding_box() -> None:
 
     from stage2.terrain.footprint_extraction import extract_building_footprints
 
-    mesh = trimesh.creation.box(extents=[10.0, 10.0, 9.0])
-    footprints = extract_building_footprints({"Building_02": mesh}, VELLORE_ANCHOR)
+    mesh = trimesh.creation.box(extents=[10.0, 9.0, 10.0])
+    footprints = extract_building_footprints({"Building_02": mesh}, SITE_TRANSFORM)
     area = Polygon(footprints[0].footprint_polygon).area
     bbox_area = 10.0 * 10.0
     assert 0.0 < area <= bbox_area * 1.0001  # convex hull of a box == its bbox footprint
@@ -203,28 +191,41 @@ def test_multiple_buildings_each_get_their_own_footprint() -> None:
     from stage2.terrain.footprint_extraction import extract_building_footprints
 
     buildings = {
-        "Building_01": trimesh.creation.box(extents=[8.0, 6.0, 12.0]),
-        "Building_02": trimesh.creation.box(extents=[10.0, 10.0, 9.0]),
-        "Building_03": trimesh.creation.box(extents=[6.0, 6.0, 15.0]),
+        "Building_01": trimesh.creation.box(extents=[8.0, 12.0, 6.0]),
+        "Building_02": trimesh.creation.box(extents=[10.0, 9.0, 10.0]),
     }
-    footprints = extract_building_footprints(buildings, VELLORE_ANCHOR)
+    footprints = extract_building_footprints(buildings, SITE_TRANSFORM)
     assert {fp.building_id for fp in footprints} == set(buildings.keys())
     heights = {fp.building_id: fp.height_m for fp in footprints}
     assert heights["Building_01"] == pytest.approx(12.0)
     assert heights["Building_02"] == pytest.approx(9.0)
-    assert heights["Building_03"] == pytest.approx(15.0)
 
 
-def test_disconnected_mesh_pieces_raise_ambiguous_geometry_error() -> None:
-    from stage2.terrain.errors import AmbiguousGeometryError
+def test_disconnected_mesh_pieces_are_merged_not_ambiguous() -> None:
+    """Real-data correction: multi-piece buildings are normal (see
+    footprint_extraction.py's module docstring) -- T2.1 already merges
+    same-prefix fragments before T2.3 ever sees them, so a disconnected
+    mesh here should just produce one combined footprint, not an error."""
     from stage2.terrain.footprint_extraction import extract_building_footprints
 
     piece_a = trimesh.creation.box(extents=[1, 1, 1]).apply_translation([0, 0, 0])
-    piece_b = trimesh.creation.box(extents=[1, 1, 1]).apply_translation([20, 20, 0])
+    piece_b = trimesh.creation.box(extents=[1, 1, 1]).apply_translation([20, 0, 20])
     disconnected = trimesh.util.concatenate([piece_a, piece_b])
     assert isinstance(disconnected, trimesh.Trimesh)
-    with pytest.raises(AmbiguousGeometryError, match="disconnected pieces"):
-        extract_building_footprints({"Building_01": disconnected}, VELLORE_ANCHOR)
+
+    footprints = extract_building_footprints({"Building_01": disconnected}, SITE_TRANSFORM)
+    assert len(footprints) == 1
+    assert footprints[0].building_id == "Building_01"
+
+
+def test_degenerate_geometry_raises_ambiguous_geometry_error() -> None:
+    from stage2.terrain.errors import AmbiguousGeometryError
+    from stage2.terrain.footprint_extraction import extract_building_footprints
+
+    # All vertices collinear -- convex hull degenerates to a line, not a Polygon.
+    line = trimesh.Trimesh(vertices=[[0, 0, 0], [1, 0, 0], [2, 0, 0]], faces=[])
+    with pytest.raises(AmbiguousGeometryError):
+        extract_building_footprints({"Building_01": line}, SITE_TRANSFORM)
 
 
 def test_scale_factor_affects_footprint_and_height() -> None:
@@ -232,10 +233,13 @@ def test_scale_factor_affects_footprint_and_height() -> None:
 
     from stage2.terrain.footprint_extraction import extract_building_footprints
 
-    mesh = trimesh.creation.box(extents=[8.0, 6.0, 12.0])
-    unit_scale = extract_building_footprints({"Building_01": mesh}, VELLORE_ANCHOR)[0]
-    doubled_anchor = VELLORE_ANCHOR.model_copy(update={"scene_to_real_scale_factor": 2.0})
-    double_scale = extract_building_footprints({"Building_01": mesh}, doubled_anchor)[0]
+    mesh = trimesh.creation.box(extents=[8.0, 12.0, 6.0])
+    unit_scale = extract_building_footprints({"Building_01": mesh}, SITE_TRANSFORM)[0]
+
+    import dataclasses
+
+    doubled_transform = dataclasses.replace(SITE_TRANSFORM, scale=2.0)
+    double_scale = extract_building_footprints({"Building_01": mesh}, doubled_transform)[0]
 
     assert unit_scale.height_m is not None and double_scale.height_m is not None
     assert double_scale.height_m == pytest.approx(unit_scale.height_m * 2.0)

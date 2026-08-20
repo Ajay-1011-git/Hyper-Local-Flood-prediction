@@ -1,4 +1,4 @@
-"""Computational mesh assembly (T2.4).
+"""Computational mesh assembly (T2.4, amended 2026-08-20 for real georeferencing).
 
 REAL EXPECTED GRAPH SHAPE — CONFIRMED IN-SESSION AGAINST RBTV1/mSWE-GNN
 ---------------------------------------------------------------------------
@@ -37,24 +37,39 @@ difference regular grids — not derived from a Delaunay/Triangle import
 like the source repo's `convert_mesh_to_pyg` does. The resulting
 node/edge SHAPE (cell-centered nodes, distance+slope edge features) still
 matches what the model actually consumes.
+
+RAISED TERRAIN FEATURES (not walls) — confirmed with the project owner
+---------------------------------------------------------------------------
+The site design has a raised circular garden bed in front of the MGR
+block (`Garden_Bed_Ring`, per the real GLB's node names). Confirmed
+directly (2026-08-20): this is NOT an obstacle like a building — water
+should only cross it once flood depth exceeds the garden's real raised
+height. That's exactly what a plain ELEVATION OFFSET achieves through
+this solver's own normal physics (T2.5's water-surface-slope term) —
+no special wall-node handling needed, just adding the feature's real
+height (from its own mesh Y-extent) to terrain elevation under its
+footprint. `raised_terrain_features` implements this generically for any
+future such feature, not hardcoded to one object name.
+
+`Building_01`/`Building_02` (confirmed genuine obstacles, per the same
+conversation) still use `is_wall_node`/`footprints` as before.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from shapely.geometry import Point, Polygon
 
 from stage2.mesh.errors import DoubleTaggedNodeError
 from stage2.shared.contracts import (
-    AnchorPoint,
     BuildingFootprint,
     ComputationalMeshNode,
     MeshEdge,
     TerrainGrid,
 )
-from stage2.terrain.anchor_transform import latlon_to_east_north_m
+from stage2.terrain.site_transform import SiteTransform
 
 
 def _tag_wall_node(
@@ -82,20 +97,46 @@ def _tag_wall_node(
     return False, None
 
 
+def _raised_elevation_offset_m(
+    east_m: float, north_m: float, raised_terrain_features: List[Tuple[BuildingFootprint, float]]
+) -> float:
+    """Sum of raise heights for every raised feature whose footprint contains this point.
+
+    Not mutually exclusive with `_tag_wall_node` -- a cell can be both
+    inside a raised feature's footprint and (separately) tagged/untagged
+    as a wall; the two mechanisms are orthogonal (obstacle vs. terrain
+    height), per the confirmed physical model.
+    """
+    point = Point(east_m, north_m)
+    return sum(
+        raise_m
+        for footprint, raise_m in raised_terrain_features
+        if Polygon(footprint.footprint_polygon).contains(point)
+    )
+
+
 def build_computational_mesh(
-    terrain: TerrainGrid, footprints: List[BuildingFootprint], anchor: AnchorPoint
+    terrain: TerrainGrid,
+    footprints: List[BuildingFootprint],
+    site_transform: SiteTransform,
+    raised_terrain_features: Optional[List[Tuple[BuildingFootprint, float]]] = None,
 ) -> Tuple[List[ComputationalMeshNode], List[MeshEdge]]:
     """Combine `terrain` and `footprints` into the finite-volume mesh graph.
 
-    `anchor` is required beyond the doc's literal `(terrain, footprints)`
-    signature: `TerrainGrid` is natively in lat/lon (T2.2's output),
-    `BuildingFootprint` is natively in anchor-relative meters (T2.3's
-    output) — the two coordinate frames only reconcile through the anchor
-    point (see `terrain.anchor_transform.latlon_to_east_north_m`). Without
-    it, point-in-polygon tagging would be comparing incompatible frames.
+    `site_transform` is required beyond the doc's literal
+    `(terrain, footprints)` signature: `TerrainGrid` is natively in
+    lat/lon (T2.2's output), `BuildingFootprint` is natively in real
+    east/north meters (T2.3's output, via the same `SiteTransform`) — the
+    two coordinate frames only reconcile through it. Without it,
+    point-in-polygon tagging would be comparing incompatible frames.
+
+    `raised_terrain_features`: `(footprint, raise_height_m)` pairs for
+    terrain that's elevated but NOT an obstacle (e.g. a raised garden bed)
+    — see module docstring. Applied as a pure elevation offset, never
+    `is_wall_node`.
 
     Returns `(nodes, edges)`: one `ComputationalMeshNode` per terrain grid
-    cell (position in anchor-relative meters, matching `BuildingFootprint`'s
+    cell (position in real east/north meters, matching `BuildingFootprint`'s
     frame), tagged `is_wall_node`/`building_id` via a real point-in-polygon
     test — never an approximation. `edges` connects each cell to its
     4-connected (N/S/E/W) neighbors, carrying real distance and DEM-slope,
@@ -106,10 +147,10 @@ def build_computational_mesh(
         DoubleTaggedNodeError: if any cell's position falls inside more
             than one building's footprint.
     """
+    raised_terrain_features = raised_terrain_features or []
     elevation = np.asarray(terrain.elevation_grid, dtype=float)
     height, width = elevation.shape
 
-    # Pre-compute each cell's (east_m, north_m, node_id) once.
     node_id_grid: List[List[str]] = [[""] * width for _ in range(height)]
     nodes: List[ComputationalMeshNode] = []
     positions: Dict[str, Tuple[float, float]] = {}
@@ -120,7 +161,7 @@ def build_computational_mesh(
             # degrees + resolution_m, not the real projected CRS/transform
             # T2.2 actually resampled onto internally. So each cell's real-
             # world position is reconstructed here via the same flat-earth
-            # approximation anchor_transform.py uses elsewhere (consistent
+            # approximation `SiteTransform` uses elsewhere (consistent
             # method, but it's a second approximation layered on top of
             # T2.2's own DEM-interpolation approximation) -- an accuracy
             # limitation of the contract as specified, not hidden here.
@@ -129,19 +170,22 @@ def build_computational_mesh(
                 terrain.resolution_m
                 / (111_320.0 * np.cos(np.radians(terrain.origin_lat)))
             )
-            east_m, north_m = latlon_to_east_north_m(lat, lon, anchor)
+            east_m, north_m = site_transform.latlon_to_east_north_m(lat, lon)
 
             node_id = f"n_{row}_{col}"
             node_id_grid[row][col] = node_id
             positions[node_id] = (east_m, north_m)
 
             is_wall, building_id = _tag_wall_node(east_m, north_m, footprints)
+            raise_offset = _raised_elevation_offset_m(
+                east_m, north_m, raised_terrain_features
+            )
             nodes.append(
                 ComputationalMeshNode(
                     node_id=node_id,
                     x_m=east_m,
                     y_m=north_m,
-                    elevation_m=float(elevation[row, col]),
+                    elevation_m=float(elevation[row, col]) + raise_offset,
                     is_wall_node=is_wall,
                     building_id=building_id,
                 )
@@ -151,7 +195,8 @@ def build_computational_mesh(
     for row in range(height):
         for col in range(width):
             this_id = node_id_grid[row][col]
-            this_elev = float(elevation[row, col])
+            this_node = nodes[row * width + col]
+            this_elev = this_node.elevation_m
             this_x, this_y = positions[this_id]
             # Only look right and down -- each undirected edge is added once.
             for dr, dc in ((0, 1), (1, 0)):
@@ -159,7 +204,8 @@ def build_computational_mesh(
                 if nr >= height or nc >= width:
                     continue
                 other_id = node_id_grid[nr][nc]
-                other_elev = float(elevation[nr, nc])
+                other_node = nodes[nr * width + nc]
+                other_elev = other_node.elevation_m
                 other_x, other_y = positions[other_id]
                 distance_m = float(np.hypot(other_x - this_x, other_y - this_y))
                 slope = (

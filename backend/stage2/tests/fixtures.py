@@ -12,54 +12,102 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import trimesh
 
 from stage2.ingestion.glb_loader import REQUIRED_OBJECT_NAMES
 
+if TYPE_CHECKING:
+    from stage2.terrain.site_transform import SiteTransform
 
-def write_synthetic_site_glb(path: Path) -> None:
-    """Write a real GLB with the 4 required named objects, arbitrary geometry.
 
-    Objects are translated to distinct, non-overlapping ground positions
-    (a small arbitrary campus-like layout) — `trimesh.creation.box`
-    centers each box at the origin by default, and an earlier version of
-    this fixture left every object stacked on top of the others, which a
-    real T2.4 integration run caught (DoubleTaggedNodeError) even though
-    each per-building unit test passed in isolation.
+def write_synthetic_site_glb(path: Path, fragmented: bool = False) -> None:
+    """Write a real GLB with the required named objects, arbitrary geometry.
+
+    Ground plane is (X, Z) -- glTF Y-up, matching the real confirmed
+    convention (see `terrain/site_transform.py`'s docstring). Objects are
+    translated to distinct, non-overlapping ground positions (a small
+    arbitrary campus-like layout) — `trimesh.creation.box` centers each
+    box at the origin by default, and an earlier version of this fixture
+    left every object stacked on top of the others, which a real T2.4
+    integration run caught (DoubleTaggedNodeError) even though each
+    per-building unit test passed in isolation.
+
+    `fragmented=True` splits each required object into 2 separately-named
+    pieces sharing its name as a prefix (`Building_01_a`, `Building_01_b`),
+    matching the real GLB's actual shape (confirmed: real buildings are
+    5-8 fragments each, an artifact of the export pipeline's simplify
+    step) — for tests of T2.1's prefix-matching/merge logic specifically.
     """
     scene = trimesh.Scene()
     extents = {
-        "Building_01": [8.0, 6.0, 12.0],
-        "Building_02": [10.0, 10.0, 9.0],
-        "Building_03": [6.0, 6.0, 15.0],
-        "Road_Network": [40.0, 4.0, 0.2],
+        "Building_01": [8.0, 12.0, 6.0],
+        "Building_02": [10.0, 9.0, 10.0],
+        "Road_Network": [40.0, 0.2, 4.0],
     }
     translations = {
-        "Building_01": [-15.0, -10.0, 0.0],
-        "Building_02": [10.0, 5.0, 0.0],
-        "Building_03": [-10.0, 12.0, 0.0],
-        "Road_Network": [0.0, -20.0, 0.0],
+        "Building_01": [-15.0, 0.0, -10.0],
+        "Building_02": [10.0, 0.0, 5.0],
+        "Road_Network": [0.0, 0.0, -20.0],
     }
     for name in REQUIRED_OBJECT_NAMES:
-        box = trimesh.creation.box(extents=extents[name])
-        box.apply_translation(translations[name])
-        scene.add_geometry(box, geom_name=name, node_name=name)
+        ex = extents[name]
+        tr = translations[name]
+        if not fragmented:
+            box = trimesh.creation.box(extents=ex)
+            box.apply_translation(tr)
+            scene.add_geometry(box, geom_name=name, node_name=name)
+        else:
+            half = ex[0] / 2.0
+            for i, x_offset in enumerate((-half / 2.0, half / 2.0)):
+                piece = trimesh.creation.box(extents=[ex[0] / 2.0, ex[1], ex[2]])
+                piece.apply_translation([tr[0] + x_offset, tr[1], tr[2]])
+                piece_name = f"{name}_{i}"
+                scene.add_geometry(piece, geom_name=piece_name, node_name=piece_name)
     path.write_bytes(scene.export(file_type="glb"))
 
 
-def write_synthetic_anchor_point(path: Path) -> None:
-    """Write a real, schema-valid anchor_point.json with arbitrary values."""
-    anchor = {
-        "scene_object_name": "Anchor",
-        "scene_local_position": [0.0, 0.0, 0.0],
-        "real_world_lat": 12.9165,
-        "real_world_lon": 79.1325,
-        "real_world_elevation_m": 216.0,
-        "scene_to_real_scale_factor": 1.0,
-        "north_axis": "+Y",
+def write_synthetic_anchor_point(path: Path, num_extra_anchors: int = 5) -> None:
+    """Write a real, schema-valid anchor_point.json matching the REAL confirmed
+    structure (primary + additional_anchors, gltf_yup positions, real
+    lat/lon) -- not the old flat single-point shape.
+
+    Uses an identity-like transform (scale=1, no rotation) so
+    `fit_site_transform` recovers exactly `ref_lat`/`ref_lon` at the
+    origin, useful for tests that want predictable coordinates.
+    """
+    ref_lat, ref_lon = 12.9165, 79.1325
+    m_per_deg_lat = 111_320.0
+
+    def offset_anchor(name: str, east_m: float, north_m: float) -> dict:
+        lat = ref_lat + north_m / m_per_deg_lat
+        import math
+
+        lon = ref_lon + east_m / (m_per_deg_lat * math.cos(math.radians(ref_lat)))
+        return {
+            "scene_object_name": name,
+            "gltf_yup_position": [east_m, 0.0, -north_m],  # East=X, North=-Z convention
+            "real_world_lat": lat,
+            "real_world_lon": lon,
+        }
+
+    primary = offset_anchor("Anchor_Primary", 0.0, 0.0)
+    doc = {
+        "primary": {
+            "scene_object_name": primary["scene_object_name"],
+            "scene_local_position_gltf_yup": primary["gltf_yup_position"],
+            "real_world_lat": primary["real_world_lat"],
+            "real_world_lon": primary["real_world_lon"],
+            "real_world_elevation_m": None,
+            "scene_to_real_scale_factor": 1.0,
+        },
+        "additional_anchors": [
+            offset_anchor(f"Anchor_Extra_{i}", float(i * 10 - 20), float(i * 7 - 15))
+            for i in range(num_extra_anchors)
+        ],
     }
-    path.write_text(json.dumps(anchor))
+    path.write_text(json.dumps(doc))
 
 
 def write_synthetic_terrain_geotiff(path: Path, resolution_m: float = 5.0, size: int = 20) -> None:
@@ -100,3 +148,23 @@ def write_synthetic_terrain_geotiff(path: Path, resolution_m: float = 5.0, size:
         dst.write(elevation, 1)
         dst.write(slope, 2)
         dst.write(aspect, 3)
+
+
+def synthetic_site_transform() -> "SiteTransform":
+    """An identity-like SiteTransform for isolated unit tests (no anchor_point.json needed).
+
+    scale=1, no rotation, centered at Vellore -- east/north == scene (x, -z)
+    directly, so tests can reason about coordinates without going through
+    a real least-squares fit.
+    """
+    from stage2.terrain.site_transform import SiteTransform as _SiteTransform
+
+    return _SiteTransform(
+        scale=1.0,
+        rotation_matrix=((1.0, 0.0), (0.0, 1.0)),
+        translation_m=(0.0, 0.0),
+        ref_lat=12.9165,
+        ref_lon=79.1325,
+        rms_residual_m=0.0,
+        per_anchor_residuals_m={},
+    )

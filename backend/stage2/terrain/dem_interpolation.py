@@ -15,9 +15,12 @@ signatures were checked directly against the installed package this
 session (`from_origin(west, north, xsize, ysize)`,
 `transform(src_crs, dst_crs, xs, ys, zs=None)`).
 
-Scene-to-real-world axis conversion (an explicitly stated, unconfirmed
-assumption) lives in `anchor_transform.py`, shared with
-`footprint_extraction.py` — see that module's docstring.
+Scene-to-real-world conversion (T2.1 amendment, 2026-08-20: the real
+18-point least-squares similarity fit, not a single-anchor axis label)
+lives in `terrain/site_transform.py`, shared with
+`footprint_extraction.py` — see that module's docstring for the confirmed
+axis convention (glTF Y-up; East = scene X, North = -scene Z) and how the
+fit was validated against the real data.
 """
 
 from __future__ import annotations
@@ -33,26 +36,28 @@ from rasterio.transform import from_origin
 from rasterio.warp import Resampling, reproject
 from rasterio.warp import transform as warp_transform
 
-from stage2.shared.contracts import AnchorPoint, TerrainGrid
-from stage2.terrain.anchor_transform import scene_offset_to_latlon as _scene_offset_to_latlon
+from stage2.shared.contracts import TerrainGrid
+from stage2.terrain.site_transform import SiteTransform
 
 
 def compute_site_bbox_latlon(
-    objects: Dict[str, trimesh.Trimesh], anchor: AnchorPoint
+    objects: Dict[str, trimesh.Trimesh], site_transform: SiteTransform
 ) -> Tuple[float, float, float, float]:
-    """Real-world (min_lat, max_lat, min_lon, max_lon) covering every object's mesh extents."""
+    """Real-world (min_lat, max_lat, min_lon, max_lon) covering every object's mesh extents.
+
+    Objects (from T2.1's `load_site_model`) are already in real WORLD
+    scene coordinates (each fragment's transform already applied) — only
+    the ground-plane (X, Z) -> (lat, lon) similarity transform remains.
+    """
     lats = []
     lons = []
     for mesh in objects.values():
         min_corner, max_corner = mesh.bounds
         for x in (min_corner[0], max_corner[0]):
-            for y in (min_corner[1], max_corner[1]):
-                for z in (min_corner[2], max_corner[2]):
-                    lat, lon = _scene_offset_to_latlon(
-                        np.array([x, y, z]), anchor
-                    )
-                    lats.append(lat)
-                    lons.append(lon)
+            for z in (min_corner[2], max_corner[2]):
+                lat, lon = site_transform.scene_to_latlon(x, z)
+                lats.append(lat)
+                lons.append(lon)
     return min(lats), max(lats), min(lons), max(lons)
 
 
