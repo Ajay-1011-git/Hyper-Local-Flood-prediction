@@ -37,4 +37,5 @@ torch-geometric==2.8.0.post1
 # ---- Test & type tooling ----
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-cov==7.1.0            # T2.10 coverage audit, same convention as Stage 1B's T1B.12
 mypy==2.3.1

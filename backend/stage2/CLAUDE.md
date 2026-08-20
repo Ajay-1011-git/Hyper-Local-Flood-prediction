@@ -322,3 +322,56 @@ confirmed directly with the project owner, not inferred from any document.
     `tests/test_routes.py`, per the build doc's file list, including a
     real WebSocket test asserting the `sensor_assimilated` broadcast's
     exact payload shape), mypy clean.
+
+## ADDENDUM — 2026-08-20 (cont.): T2.10 test suite completion, real coverage audit
+
+20. **Coverage audit** (`pytest-cov`, added to `requirements.txt`,
+    matching Stage 1B's own T1B.12 convention): 96% line coverage across
+    all of `backend/stage2/` (1815 statements, 70 missed). Added one more
+    real test (`test_post_assimilate_500_when_target_is_a_wall_node`) to
+    close a real gap in `routes.py`'s own logic, raising it from 93% to
+    96%. The remaining gaps, checked individually rather than chased for
+    a round number:
+    - `gnn/vendor/mswe_gnn/{gnn,models}.py` (91%/59%) — vendored
+      third-party code; the uncovered lines are multiscale-only code
+      paths (`MSGNN`, `intra_scale_gnn`) this project's single-scale
+      `SWEGNN` usage structurally never reaches, not our logic to test.
+    - `gnn/device.py` line 42 — the "MPS requested but unavailable,
+      falling back to CPU" warning branch; only reachable on hardware
+      without Metal support, not this development machine.
+    - `routes.py` 121-122/124 — the dead-WebSocket-connection cleanup
+      path inside `ConnectionManager.broadcast` (only reached when a
+      `send_json` call itself raises, e.g. a client disconnecting
+      mid-broadcast); a real but low-value path to force via a mock.
+    - `solver/shallow_water_solver.py` line 253 — `SolverInstabilityError`'s
+      own raise line; deliberately never triggered by a real test
+      (that would mean an unstable run, which none of the real
+      trajectories this project generates are) — the instability path
+      itself IS exercised (see T2.5's real-mesh bug/fix earlier in this
+      file), just not via a unit test that intentionally breaks the
+      solver.
+    - `terrain/site_transform.py` line 183 — the reflection-correction
+      branch of the Umeyama SVD fit (`det(U)*det(Vt.T) < 0`); the real
+      anchor data's own fit never hits this branch, and fabricating
+      synthetic anchor points specifically to trigger a reflection would
+      test the math library, not this project's logic.
+    - `terrain/dem_source.py` lines 56/59, `config.py` line 70,
+      `shared/contracts.py` line 53 — similar defensive/edge-case
+      branches (URL-prefix fallthrough, comment-stripping edge case,
+      import-guard) not exercised by any real call path in this project.
+21. **Honest note on §E's acceptance checklist item 8** ("only
+    `backend/stage2/` files were touched"): NOT literally true across
+    this whole session — `backend/shared/contracts.py` was reconciled
+    with Stage 3's independently-built version (explicit user decision,
+    documented in `shared/contracts.py`'s own docstring), and
+    `backend/stage1b/.env`/`backend/stage1b/CLAUDE.md` were touched
+    once, with the user's explicit one-off permission, to register a
+    real DEM for T2.2 (documented in `stage1b/CLAUDE.md`'s own
+    addendum). Every other task's actual code changes were scoped to
+    `backend/stage2/` only, per each task's own "Files you may touch."
+22. **Full real VERIFY**: `pytest backend/stage2/tests/ -v` — 74/74
+    passed (see this addendum's own commit for the complete real,
+    unedited output). `mypy --config-file stage2/pyproject.toml stage2`
+    — clean, 47 source files. T2.1 through T2.9 are all real-data-
+    verified against the actual VIT Vellore site (not just synthetic
+    fixtures) at least once each, per their own addenda above.

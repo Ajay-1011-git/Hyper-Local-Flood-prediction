@@ -85,6 +85,27 @@ def test_get_simulation_site_404_when_not_seeded(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_post_assimilate_500_when_target_is_a_wall_node(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    nodes, edges = _grid_mesh(size=5)
+    nodes = [n.model_copy(update={"is_wall_node": True, "building_id": "Building_01"}) if n.node_id == "n_2_2" else n for n in nodes]
+    result = _simulation_result("site-wall", nodes)
+    set_site_state("site-wall", nodes, edges, result)
+
+    class _ConfiguredSettings:
+        sensor_target_x_m = 4.0
+        sensor_target_y_m = 4.0  # n_2_2, the wall node
+        sensor_mount_height_m = 0.5
+
+    monkeypatch.setattr(routes, "get_settings", lambda: _ConfiguredSettings())
+
+    resp = client.post(
+        "/api/simulation/assimilate",
+        json={"sensor_id": "s1", "site_id": "site-wall", "distance_cm": 20.0,
+              "timestamp": datetime.now(timezone.utc).isoformat()},
+    )
+    assert resp.status_code == 500
+
+
 def test_post_assimilate_404_when_no_precomputed_simulation(client: TestClient) -> None:
     resp = client.post(
         "/api/simulation/assimilate",
