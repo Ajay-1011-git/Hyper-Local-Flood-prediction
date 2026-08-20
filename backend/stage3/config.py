@@ -6,6 +6,7 @@ own location rather than the process's cwd).
 """
 
 from pathlib import Path
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -35,6 +36,24 @@ class Settings(BaseSettings):
     # blank, since T3.4 is now done; still overridable via .env if a
     # human supplies a different confirmed source later.
     vulnerability_curve_source: str = VULNERABILITY_CURVE_SOURCE
+
+    # T3.6: Stage 2's real, documented endpoint is `GET /api/simulation/
+    # site/{site_id}` (stage2 build doc T2.9) -- this is the BASE url
+    # (no trailing site_id), matching Stage 1B's STAGE1A_REGIONAL_
+    # FORECAST_URL pattern for the same "no live upstream in this repo
+    # yet" situation. None until Ajay's Stage 2 has a running deployment
+    # to point at; routes.py falls back to an explicitly-labeled mock
+    # fixture when unset (or on fetch failure), same as Stage 1B did for
+    # Stage 1A before it went live.
+    stage2_simulation_result_base_url: Optional[str] = None
+
+    # Flagged per this project's convention for unverified defaults: no
+    # doc states how long a SimulationResult / its derived DamageRankEntry
+    # ranking should be considered fresh. A reasonable starting point
+    # (matches Stage 1B's forecast-window order of magnitude), not an
+    # independently proven-correct value -- revisit once Stage 2 states
+    # its own real simulation-refresh cadence.
+    damage_ranking_cache_ttl_seconds: int = 3600
 
 
 settings = Settings()

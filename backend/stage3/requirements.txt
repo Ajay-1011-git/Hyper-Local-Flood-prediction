@@ -16,3 +16,8 @@ mypy==2.3.1
 asyncpg==0.31.0
 greenlet==3.5.5                # required by SQLAlchemy's async engine
 redis==8.1.0
+
+# T3.6: API route
+requests==2.34.2               # fetching Stage 2's live SimulationResult
+httpx==0.28.1                  # required by FastAPI's TestClient / AsyncClient
+uvicorn==0.52.4                # running the app for real (VERIFY, dev)
