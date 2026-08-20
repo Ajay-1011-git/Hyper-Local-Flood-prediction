@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import pytest
 import torch
+
+if TYPE_CHECKING:
+    from backend.shared.contracts import DownscaledForecastField
 
 from stage2.gnn.device import resolve_device
 from stage2.gnn.graph_builder import OUT_DIM, PREVIOUS_T, build_graph
@@ -17,6 +20,7 @@ from stage2.gnn.model import (
     inject_boundary,
     predict_next_state,
 )
+from stage2.gnn.ensemble import run_ensemble
 from stage2.gnn.training import train_on_solver_trajectory, validate_against_solver
 from stage2.shared.contracts import ComputationalMeshNode, MeshEdge
 from stage2.solver.shallow_water_solver import run_trajectory
@@ -136,3 +140,119 @@ def test_inject_boundary_overwrites_only_the_target_node() -> None:
 
     assert depth_history[-1] == {"a": 0.9, "b": 0.2}
     assert velocity_history[-1] == {"a": 0.7, "b": 0.06}
+
+
+# ------------------------------------------------------- ensemble propagation (T2.7)
+
+
+def _forecast(site_id: str = "test-site", num_members: int = 3, hours: int = 5) -> "DownscaledForecastField":
+    from backend.shared.contracts import (
+        DownscaledEnsembleMember,
+        DownscaledForecastField,
+        DownscaledTimestepValue,
+    )
+    from datetime import datetime, timezone
+
+    members = [
+        DownscaledEnsembleMember(
+            member_id=m,
+            trajectory=[
+                DownscaledTimestepValue(hour=h, inflow_mm=5.0 + m * 2.0 + h)
+                for h in range(1, hours + 1)
+            ],
+        )
+        for m in range(num_members)
+    ]
+    return DownscaledForecastField(
+        site_id=site_id,
+        site_lat=12.9165,
+        site_lon=79.1325,
+        calibration_confidence="computed_only_no_nearby_station",
+        source_forecast_id="forecast-abc",
+        generated_at=datetime.now(timezone.utc),
+        members=members,
+    )
+
+
+def test_run_ensemble_produces_one_node_state_per_node_per_hour() -> None:
+    nodes, edges = _small_mesh(size=4)
+    device = resolve_device()
+    model = build_model(device)
+    forecast = _forecast(num_members=3, hours=4)
+
+    result = run_ensemble(
+        forecast, nodes, edges, model, cell_area_m2=4.0,
+        hazard_threshold_m=0.1, validation_error_m=0.02,
+        simulation_id="sim-1", device=device,
+    )
+
+    assert result.site_id == forecast.site_id
+    assert result.source_forecast_id == forecast.source_forecast_id
+    assert result.simulation_id == "sim-1"
+    assert len(result.node_states) == len(nodes) * 4  # 4 hours
+
+
+def test_run_ensemble_envelope_brackets_the_mean_sensibly() -> None:
+    nodes, edges = _small_mesh(size=4)
+    device = resolve_device()
+    model = build_model(device)
+    forecast = _forecast(num_members=4, hours=3)
+
+    result = run_ensemble(
+        forecast, nodes, edges, model, cell_area_m2=4.0,
+        hazard_threshold_m=0.1, validation_error_m=0.02,
+        simulation_id="sim-2", device=device,
+    )
+
+    assert result.envelope["member_count"] == 4
+    assert result.envelope["total_hours"] == 3
+    assert result.envelope["max_depth_m"] >= 0.0
+
+    for ns in result.node_states:
+        assert ns.depth_min_m <= ns.depth_mean_m <= ns.depth_max_m
+        assert ns.velocity_min_mps <= ns.velocity_mean_mps <= ns.velocity_max_mps
+        assert 0.0 <= ns.ensemble_agreement_fraction <= 1.0
+
+
+def test_run_ensemble_never_floods_a_wall_node() -> None:
+    nodes, edges = _small_mesh(size=4)
+    nodes = [
+        n.model_copy(update={"is_wall_node": True, "building_id": "Building_01"})
+        if n.node_id == "n_1_1"
+        else n
+        for n in nodes
+    ]
+    device = resolve_device()
+    model = build_model(device)
+    forecast = _forecast(num_members=3, hours=3)
+
+    result = run_ensemble(
+        forecast, nodes, edges, model, cell_area_m2=4.0,
+        hazard_threshold_m=0.1, validation_error_m=0.02,
+        simulation_id="sim-3", device=device,
+    )
+
+    wall_states = [ns for ns in result.node_states if ns.node_id == "n_1_1"]
+    assert len(wall_states) == 3  # one per hour
+    assert all(ns.depth_mean_m == 0.0 and ns.depth_max_m == 0.0 for ns in wall_states)
+    assert all(ns.building_id == "Building_01" for ns in wall_states)
+
+
+def test_run_ensemble_rejects_empty_member_list() -> None:
+    from backend.shared.contracts import DownscaledForecastField
+    from datetime import datetime, timezone
+
+    nodes, edges = _small_mesh(size=3)
+    device = resolve_device()
+    model = build_model(device)
+    empty_forecast = DownscaledForecastField(
+        site_id="s", site_lat=0.0, site_lon=0.0,
+        calibration_confidence="computed_only_no_nearby_station",
+        source_forecast_id="f", generated_at=datetime.now(timezone.utc), members=[],
+    )
+    with pytest.raises(ValueError):
+        run_ensemble(
+            empty_forecast, nodes, edges, model, cell_area_m2=4.0,
+            hazard_threshold_m=0.1, validation_error_m=0.02,
+            simulation_id="sim-4", device=device,
+        )

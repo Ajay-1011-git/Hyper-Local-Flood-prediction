@@ -189,3 +189,44 @@ confirmed directly with the project owner, not inferred from any document.
     ghost-cell-equivalent mechanism was confirmed to actually change the
     model's downstream prediction for the injected node on the real
     graph. No code changes were needed for T2.6.
+
+## ADDENDUM — 2026-08-20 (cont.): T2.7 ensemble propagation, built and real-VERIFIED
+
+12. **New: `gnn/ensemble.py`.** `run_ensemble(forecast, nodes, edges,
+    model, cell_area_m2, hazard_threshold_m, validation_error_m,
+    simulation_id, device=None) -> SimulationResult`. Two deliberate,
+    explicitly-flagged design decisions (see the module's own docstring
+    for full reasoning, since neither is directly confirmed against the
+    real `RBTV1/mSWE-GNN` repo's own production inference code):
+    - Production ensemble runs go through T2.6's GNN (autoregressive
+      rollout, dry-start seed), not T2.5's solver — the solver remains
+      the training-data generator / fallback, matching why
+      `SimulationResult.validation_error_m` exists at all (it's the
+      GNN's own MAE against the solver; would be meaningless if the
+      solver produced results directly).
+    - The vendored single-scale GNN has no rainfall input feature
+      (confirmed: only elevation/area static + previous depth/velocity
+      dynamic). Rainfall forcing is applied by adding each step's real
+      recharge (`inflow_mm/1000`, matching T2.5's own uniform-recharge
+      convention) directly into every non-wall node's most recent
+      depth-history entry before the forward pass — the general form of
+      `inject_boundary`'s single-node ghost-cell mechanism.
+    - `hazard_threshold_m` and `validation_error_m` are REQUIRED
+      parameters, never silently defaulted — the caller (eventually
+      T2.9's route) must supply real, known values.
+13. **Real VERIFY, against the actual VIT Vellore mesh** (7,458 nodes):
+    trained the GNN on a real solver trajectory (real
+    `validation_error_m` = 0.0185m, matching T2.6's earlier real number),
+    then ran a real 5-member, 4-hour ensemble
+    (`hazard_threshold_m=0.05`). Real output: 29,832 `NodeState`s
+    (= 7,458 nodes × 4 hours, exact expected count), envelope
+    `{max_depth_m: 0.097, hours_any_node_exceeds_threshold: 3,
+    total_hours: 4, member_count: 5}`, every sampled `NodeState`'s
+    `depth_min_m <= depth_mean_m <= depth_max_m` (and same for
+    velocity) held, `ensemble_agreement_fraction` real and in [0, 1]
+    (max observed 0.6). Ensemble wall-clock: ~41s for 5 members × 4
+    hours on the full real mesh (MPS) — a real number for future
+    performance planning, not claimed to be real-time yet at full
+    50-150-member/72-hour scale. 59/59 tests pass (4 new ensemble tests
+    added to `tests/test_gnn.py`, per the build doc's own file list),
+    mypy clean.
