@@ -47,6 +47,7 @@ from typing import List, Tuple
 
 import requests
 from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.stage4.alerts.cap_generator import derive_severity, derive_urgency, generate_cap_xml
 from backend.stage4.alerts.multilingual import generate_alert_text
@@ -58,6 +59,39 @@ from backend.stage4.shared.contracts import Alert, DamageRankEntry, NodeState, S
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Stage 4 — Alerts")
+
+# CORS — added 2026-08-20 during T4B.0, after a REAL headless-browser test
+# caught that no stage in this project had it configured at all, so no
+# browser frontend could call any backend ("blocked by CORS policy: No
+# 'Access-Control-Allow-Origin' header"). curl never surfaces this, which
+# is exactly why every earlier stage's curl-based VERIFY passed while the
+# system remained unusable from a browser.
+#
+# `CORS_ALLOWED_ORIGINS` is an explicit allowlist (default: the real Vite
+# dev-server origins this project actually uses), NOT `["*"]` -- a
+# wildcard would be the lazy fix, and this API is intended to sit behind
+# a real gateway in any real deployment.
+#
+# NOTE, flagged rather than silently worked around: Stage 1A/1B/2/3 each
+# still lack CORS, and each is another module's file (this stage's own
+# anti-drift rule 6 forbids touching them). A frontend that needs to call
+# those directly will hit the same wall -- see frontend/src/api/client.ts.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    # The frontend reads these to show WHICH source is powering the
+    # display (the honesty requirement in T4C.1/T4C.6); browsers hide
+    # non-simple response headers unless they're explicitly exposed.
+    expose_headers=[
+        "X-Simulation-Source",
+        "X-Ranking-Source",
+        "X-Geometry-Source",
+        "X-Cache",
+    ],
+)
 
 
 # ---------------------------------------------------------------------------

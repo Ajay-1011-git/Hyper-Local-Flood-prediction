@@ -38,3 +38,9 @@ backend/stage2/blender_prep/output/**
 # cfgrib writes a per-file index cache beside any GRIB2 it opens.
 # Generated artifact, not a fixture -- never commit it.
 *.grib2.*.idx
+
+# Stage 4 VERIFY screenshots -- real headless-browser output, regenerated
+# on demand by frontend/scripts/verify-screenshot.mjs. Real evidence for
+# the build docs' VERIFY steps, but not source; kept out of the repo the
+# same way data/ artifacts are.
+verify_screenshots/

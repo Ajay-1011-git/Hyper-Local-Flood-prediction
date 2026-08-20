@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     stage3_damage_ranking_base_url: Optional[str] = None
     alert_cache_ttl_seconds: int = 3600  # flagged, unverified-optimal default
 
+    # T4B.0: real browser origins allowed to call this API. An explicit
+    # allowlist, never "*" -- see routes.py's own CORS comment. Comma-
+    # separated (same convention as supported_languages) so it round-trips
+    # through .env without JSON-list parsing.
+    cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
     @property
     def supported_languages_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",") if lang.strip()]
