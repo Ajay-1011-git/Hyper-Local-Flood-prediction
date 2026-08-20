@@ -230,3 +230,57 @@ confirmed directly with the project owner, not inferred from any document.
     50-150-member/72-hour scale. 59/59 tests pass (4 new ensemble tests
     added to `tests/test_gnn.py`, per the build doc's own file list),
     mypy clean.
+
+## ADDENDUM — 2026-08-20 (cont.): T2.8 live sensor assimilation, built and real-VERIFIED
+
+14. **New: `assimilation/ghost_cell_update.py` + `assimilation/errors.py`.**
+    `assimilate_reading(reading, current_state, nodes, edges, target_x_m,
+    target_y_m, sensor_mount_height_m, propagation_radius_m=20.0) ->
+    SimulationResult`. Sensor not yet physically placed (confirmed with
+    the project owner) — `target_x_m`/`target_y_m`/`sensor_mount_height_m`
+    are required parameters, resolved by T2.9's route from new
+    `Stage2Settings` fields (`sensor_target_x_m`/`_y_m`/
+    `sensor_mount_height_m`, all `Optional[float] = None`), which raises
+    `SensorLocationNotConfiguredError` until real values are set — the
+    endpoint exists and is wired now, without a fabricated location.
+15. **Method changed mid-task after a real numerical failure, kept for the
+    record.** First attempt: re-run T2.5's solver for a short real-time
+    window (~2s, the sensor's polling interval) seeded from the current
+    state via a new `run_trajectory(..., initial_depth_by_node=...)`
+    parameter. Real-tested against the actual mesh: produced physically
+    absurd results (corrected depth drained to near-zero within 2
+    simulated seconds, reported a >4 m/s velocity for an ordinary urban
+    cell) — a sharp single-point correction against a gentle background is
+    outside the regime T2.5's CFL/friction balance is tuned for (gently-
+    varying sub-critical flow, per T2.5's own docstring). Reverted (the
+    `initial_depth_by_node` solver parameter was removed again — unused,
+    no reason to keep dead surface area). Replaced with DISTANCE-WEIGHTED
+    NUDGING (successive correction / optimal interpolation — a real,
+    standard, simpler data-assimilation technique): blend the observation
+    with the model's background depth, weighted by real graph distance,
+    linearly decaying to zero at `propagation_radius_m`. Well-behaved by
+    construction (a convex combination of two non-negative depths can't
+    go negative or spike) and satisfies "recomputing... locally" without
+    touching the PDE solver's stability margins for a problem it wasn't
+    designed for.
+16. **Only depth is nudged.** The HC-SR04 measures distance to water
+    surface, nothing else — `velocity_*_mps`/`rate_of_rise` are left as
+    the model's own unaltered estimates at every node, including the
+    target; nudging them would fabricate information the sensor never
+    provided. `ensemble_agreement_fraction` IS re-derived at the exact
+    target node (weight=1.0) since it's directly defined in terms of
+    depth vs. `hazard_threshold_m` — a real recomputation, not a guess.
+17. **Real VERIFY, against the actual 7,458-node VIT Vellore mesh**: used
+    T2.7's real `SimulationResult` as `current_state`, picked a real
+    non-wall node's real coordinates as the (still-unplaced) sensor
+    target, injected `distance_cm=15.0` (mount height 0.5m → measured
+    depth 0.35m). Real output: target node's depth_mean/min/max all
+    collapse to exactly 0.35m, `ensemble_agreement_fraction=1.0`,
+    velocity/rate_of_rise unchanged; immediate 2m-away neighbors land at
+    0.318m, exactly matching the stated linear-decay formula
+    (`0.9*0.35 + 0.1*0.0306`); a far node is confirmed untouched via
+    Python object identity (`is`, not just equality); only 157/29,832
+    `NodeState`s changed (confirms locality); wall-clock 0.128s (confirms
+    "fast" — real number, not claimed). 68/68 tests pass (9 new, in
+    `tests/test_assimilation.py`, per the build doc's file list), mypy
+    clean.

@@ -48,6 +48,16 @@ class Stage2Settings(BaseSettings):
     # instance/database across stages, each owning its own tables.
     stage1b_database_url: str = "postgresql://localhost:5432/floodsystem"
 
+    # T2.8: the ESP32/HC-SR04 hardware unit has not been physically placed
+    # yet (confirmed with the project owner, 2026-08-20) — left unset
+    # rather than a fabricated location. `assimilation/ghost_cell_update.py`
+    # and T2.9's assimilate route both require these to be real (non-None)
+    # before assimilating a live reading, raising
+    # `SensorLocationNotConfiguredError` otherwise.
+    sensor_target_x_m: Optional[float] = None
+    sensor_target_y_m: Optional[float] = None
+    sensor_mount_height_m: Optional[float] = None
+
     @model_validator(mode="before")
     @classmethod
     def _strip_inline_env_comments(cls, data: Any) -> Any:
