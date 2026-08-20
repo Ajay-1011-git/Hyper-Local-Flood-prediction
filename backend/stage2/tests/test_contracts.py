@@ -8,7 +8,6 @@ from stage2.shared.contracts import (
     AnchorPoint,
     BuildingFootprint,
     ComputationalMeshNode,
-    NodeHazardTimestep,
     NodeState,
     SimulationResult,
     TerrainGrid,
@@ -70,31 +69,33 @@ def test_computational_mesh_node_round_trips() -> None:
 
 
 def test_simulation_result_round_trips() -> None:
+    """Uses Stage 3's already-built NodeState/SimulationResult shape (flat,
+    one NodeState per node-hour) -- adopted 2026-08-20 to reconcile with
+    Stage 3's independently-built version; see shared/contracts.py's
+    module docstring."""
     result = SimulationResult(
         simulation_id="sim-1",
         site_id="vellore_demo_site_01",
         source_forecast_id="downscaled-abc123",
         generated_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
-        nodes=[
+        hazard_threshold_m=0.3,
+        validation_error_m=0.12,
+        node_states=[
             NodeState(
                 node_id="n0",
-                is_wall_node=False,
+                hour=6,
+                depth_mean_m=0.1,
+                depth_min_m=0.05,
+                depth_max_m=0.2,
+                velocity_mean_mps=0.3,
+                velocity_min_mps=0.1,
+                velocity_max_mps=0.5,
+                rate_of_rise=0.02,
+                ensemble_agreement_fraction=0.8,
                 building_id=None,
-                states=[
-                    NodeHazardTimestep(
-                        hour=6,
-                        depth_mean_m=0.1,
-                        depth_min_m=0.05,
-                        depth_max_m=0.2,
-                        velocity_mean_mps=0.3,
-                        velocity_min_mps=0.1,
-                        velocity_max_mps=0.5,
-                        rate_of_rise_mean_m_per_hr=0.02,
-                        ensemble_agreement_fraction=0.8,
-                    )
-                ],
+                road_segment_id=None,
             )
         ],
-        validation_error_m=0.12,
+        envelope={},
     )
     assert SimulationResult.model_validate(result.model_dump()) == result
