@@ -27,6 +27,7 @@
 import { useMemo, useState } from 'react'
 
 import type { RegionalEnsembleForecast } from '../api/types'
+import { forecastSourceLabel } from '../forecastSources'
 import {
   computeExceedanceReadout,
   computeFanChartGeometry,
@@ -39,11 +40,6 @@ const PAD_LEFT = 28
 const PAD_BOTTOM = 16
 const PLOT_W = VIEW_W - PAD_LEFT
 const PLOT_H = VIEW_H - PAD_BOTTOM
-
-const SOURCE_LABELS: Record<string, string> = {
-  GEFS: 'GEFS (0.25°)',
-  WeatherNext2_Cyclones_Mini: 'WeatherNext 2 Mini (1.0°)',
-}
 
 export interface EnsembleFanChartProps {
   forecast: RegionalEnsembleForecast
@@ -62,7 +58,7 @@ export function EnsembleFanChart({ forecast }: EnsembleFanChartProps) {
     )
   }
 
-  const sourceLabel = SOURCE_LABELS[forecast.source] ?? forecast.source
+  const sourceLabel = forecastSourceLabel(forecast.source)
 
   const handleMove = (event: React.MouseEvent<SVGRectElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
