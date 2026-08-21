@@ -32,6 +32,7 @@ import PixelPanel from '../components/pixel/PixelPanel'
 import { useSceneStore } from '../store/sceneStore'
 import CameraController, { type CameraPose } from './CameraController'
 import DamageOverlay from './DamageOverlay'
+import SensorMarker from './SensorMarker'
 import SiteMesh from './SiteMesh'
 import Terrain from './Terrain'
 import UncertaintyEnvelope from './UncertaintyEnvelope'
@@ -191,6 +192,7 @@ export function SiteScene({ siteId, scenario = 'real', wireframe = false }: Site
         <WaterSurface siteId={siteId} onWetVertexCountChange={setWetVertexCount} />
         <UncertaintyEnvelope siteId={siteId} />
         <DamageOverlay siteId={siteId} />
+        <SensorMarker siteId={siteId} />
         {/* No static `target` prop here (T4B.8): CameraController now owns
             the camera's resting pose AND its animated transitions, and a
             static prop re-applied every SiteScene render would fight its

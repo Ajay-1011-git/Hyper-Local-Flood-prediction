@@ -191,8 +191,20 @@ export function SimulationControls({
           style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ops-text-dim)', lineHeight: 1.4 }}
         >
           {provenance.member_count} ensemble members over {provenance.node_count.toLocaleString()}{' '}
-          mesh nodes at {provenance.grid_resolution_m} m. GNN depth error vs the numerical solver:{' '}
-          {provenance.validation_depth_mae_m} m.
+          mesh nodes at {provenance.grid_resolution_m} m.{' '}
+          {provenance.engine === 'numerical_solver' ? (
+            <>
+              Computed by the <strong>numerical solver</strong> — the GNN emulator&apos;s
+              rollout failed the mass-conservation check (held{' '}
+              {provenance.mass_conservation_ratio}× the water that fell), so its
+              output was discarded.
+            </>
+          ) : (
+            <>
+              Computed by the <strong>GNN emulator</strong>; depth error vs the numerical
+              solver {provenance.validation_depth_mae_m} m.
+            </>
+          )}
         </p>
       )}
     </PixelPanel>

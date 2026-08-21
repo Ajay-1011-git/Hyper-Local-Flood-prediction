@@ -135,6 +135,11 @@ export interface PrecomputeStatus {
 export interface SimulationProvenance {
   scenario: SimulationScenario
   is_hypothetical: boolean
+  /** Which engine actually produced the shipped numbers. The GNN emulator
+   *  is used unless its rollout fails Stage 2's mass-conservation check,
+   *  in which case the numerical solver's output is used instead. */
+  engine: 'gnn_emulator' | 'numerical_solver'
+  mass_conservation_ratio: number
   rainfall_scale_factor: number
   heavy_target_mm_per_24h: number | null
   source_forecast_id: string
