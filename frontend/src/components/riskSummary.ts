@@ -25,8 +25,19 @@ function trendDescriptor(rateOfRise: number): string {
   return 'steady'
 }
 
+/** Real depth, at a precision that doesn't erase it.
+ *
+ * `toFixed(1)` rendered every sub-decimetre depth as "0.0m" — including
+ * a real 7cm of standing water on a road, which is a genuine, rankable
+ * hazard, and made distinct structures look identical. Switches to
+ * centimetres below 10cm rather than padding decimals onto deep water. */
+export function depthLabel(depthM: number): string {
+  if (depthM < 0.1) return `${Math.round(depthM * 100)}cm`
+  return `${depthM.toFixed(1)}m`
+}
+
 export function hazardSummary(entry: DamageRankEntry): string {
-  return `${entry.peak_depth_m.toFixed(1)}m depth, ${flowDescriptor(entry.peak_velocity_mps)}, ${trendDescriptor(entry.peak_rate_of_rise)}`
+  return `${depthLabel(entry.peak_depth_m)} depth, ${flowDescriptor(entry.peak_velocity_mps)}, ${trendDescriptor(entry.peak_rate_of_rise)}`
 }
 
 /** "41 of 50 forecast scenarios place this structure above the critical

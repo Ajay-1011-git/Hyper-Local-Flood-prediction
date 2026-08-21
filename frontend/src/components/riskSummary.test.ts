@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { DamageRankEntry } from '../api/types'
-import { confidencePercent, hazardSummary } from './riskSummary'
+import { confidencePercent, depthLabel, hazardSummary } from './riskSummary'
 
 function makeEntry(overrides: Partial<DamageRankEntry> = {}): DamageRankEntry {
   return {
@@ -43,5 +43,19 @@ describe('hazardSummary', () => {
 describe('confidencePercent', () => {
   it('rounds the real confidence fraction to a whole percent', () => {
     expect(confidencePercent(makeEntry({ confidence: 0.826 }))).toBe(83)
+  })
+})
+
+describe('depthLabel', () => {
+  it('shows real centimetre-scale water instead of collapsing it to 0.0m', () => {
+    // 7cm of standing water on a road is a real, rankable hazard; the
+    // previous toFixed(1) rendered it as "0.0m".
+    expect(depthLabel(0.0718)).toBe('7cm')
+    expect(depthLabel(0.0007)).toBe('0cm')
+  })
+
+  it('keeps metres for water deep enough for the unit to matter', () => {
+    expect(depthLabel(0.46)).toBe('0.5m')
+    expect(depthLabel(1.62)).toBe('1.6m')
   })
 })

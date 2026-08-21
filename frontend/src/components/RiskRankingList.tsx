@@ -103,7 +103,13 @@ export function RiskRankingList({ scenario = 'real' }: RiskRankingListProps) {
                 <SeverityBadge state={severity} />
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--ops-text-dim)', marginTop: 4 }}>
-                {confidencePercent(entry)}% confidence
+                {/* NOT a confidence-in-the-ranking figure. This is the real
+                    fraction of ensemble members that put this structure above
+                    the hazard threshold (`ensemble_agreement_fraction`), which
+                    is exactly the User Flow's own "41 of 50 forecast scenarios"
+                    phrasing. Labelling it "% confidence" made an honest "no
+                    scenario floods this" read as "we don't trust this number". */}
+                {confidencePercent(entry)}% of scenarios flood this
               </div>
               <div style={{ fontSize: '0.8rem', marginTop: 2 }}>{hazardSummary(entry)}</div>
             </button>
