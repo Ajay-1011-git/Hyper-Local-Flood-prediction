@@ -116,8 +116,91 @@ export function postSensorReading(
 
 // ---------------------------------------------------------------- Stage 2
 
-export function fetchSimulationResult(siteId: string): Promise<SimulationResult> {
-  return getJson(`${STAGE_BASE_URLS.stage2}/api/simulation/site/${encodeURIComponent(siteId)}`)
+/**
+ * The two real simulation scenarios Stage 2 runs (see its own
+ * `precompute.py` docstring). `real` is the honest current forecast;
+ * `heavy` is an explicitly-labelled hypothetical at a real IMD rainfall
+ * category. Never present `heavy` as a forecast.
+ */
+export type SimulationScenario = 'real' | 'heavy'
+
+export interface PrecomputeStatus {
+  state: 'idle' | 'running' | 'done' | 'failed'
+  message: string
+  progress: number
+  detail?: string | null
+}
+
+/** Real, disclosable facts about how a stored simulation was produced. */
+export interface SimulationProvenance {
+  scenario: SimulationScenario
+  is_hypothetical: boolean
+  rainfall_scale_factor: number
+  heavy_target_mm_per_24h: number | null
+  source_forecast_id: string
+  member_count: number
+  node_count: number
+  edge_count: number
+  grid_resolution_m: number
+  hazard_threshold_m: number
+  validation_depth_mae_m: number
+  validation_velocity_mae_mps: number
+  training_epochs: number
+}
+
+export interface SensorLocation {
+  configured: boolean
+  reason?: string
+  x_m?: number
+  y_m?: number
+  mount_height_m?: number
+  nearest_node_id?: string | null
+}
+
+function stage2Url(path: string, scenario?: SimulationScenario): string {
+  const url = new URL(`${STAGE_BASE_URLS.stage2}${path}`)
+  if (scenario) url.searchParams.set('scenario', scenario)
+  return url.toString()
+}
+
+export function fetchSimulationResult(
+  siteId: string,
+  scenario: SimulationScenario = 'real',
+): Promise<SimulationResult> {
+  return getJson(stage2Url(`/api/simulation/site/${encodeURIComponent(siteId)}`, scenario))
+}
+
+export function fetchSimulationProvenance(
+  siteId: string,
+  scenario: SimulationScenario = 'real',
+): Promise<SimulationProvenance> {
+  return getJson(
+    stage2Url(`/api/simulation/site/${encodeURIComponent(siteId)}/provenance`, scenario),
+  )
+}
+
+/** Starts a real precompute run. Returns immediately (HTTP 202) — poll
+ *  `fetchPrecomputeStatus` for real progress. */
+export function startPrecompute(
+  siteId: string,
+  scenario: SimulationScenario = 'real',
+): Promise<PrecomputeStatus> {
+  return getJson(stage2Url(`/api/simulation/precompute/${encodeURIComponent(siteId)}`, scenario), {
+    method: 'POST',
+  })
+}
+
+export function fetchPrecomputeStatus(
+  siteId: string,
+  scenario: SimulationScenario = 'real',
+): Promise<PrecomputeStatus> {
+  return getJson(
+    stage2Url(`/api/simulation/precompute/${encodeURIComponent(siteId)}/status`, scenario),
+  )
+}
+
+export function fetchSensorLocation(siteId: string): Promise<SensorLocation> {
+  return getJson(`${STAGE_BASE_URLS.stage2}/api/sensor/location/${encodeURIComponent(siteId)}`)
 }
 
 export function postSimulationAssimilate(reading: SensorReading): Promise<SimulationResult> {
@@ -181,7 +264,13 @@ export const queryKeys = {
   regionalForecast: ['regionalForecast'] as const,
   riverStage: (lat: number, lon: number) => ['riverStage', lat, lon] as const,
   downscaled: (lat: number, lon: number) => ['downscaled', lat, lon] as const,
-  simulation: (siteId: string) => ['simulation', siteId] as const,
+  simulation: (siteId: string, scenario: SimulationScenario = 'real') =>
+    ['simulation', siteId, scenario] as const,
+  simulationProvenance: (siteId: string, scenario: SimulationScenario = 'real') =>
+    ['simulationProvenance', siteId, scenario] as const,
+  precomputeStatus: (siteId: string, scenario: SimulationScenario = 'real') =>
+    ['precomputeStatus', siteId, scenario] as const,
+  sensorLocation: (siteId: string) => ['sensorLocation', siteId] as const,
   damageRanking: (siteId: string) => ['damageRanking', siteId] as const,
   alert: (siteId: string) => ['alert', siteId] as const,
   siteTerrain: (siteId: string) => ['siteTerrain', siteId] as const,

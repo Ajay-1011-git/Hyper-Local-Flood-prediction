@@ -43,6 +43,7 @@
 
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import * as THREE from 'three'
 
 import type { DamageRankEntry } from '../api/types'
 import { queryKeys } from '../api/client'
@@ -69,10 +70,16 @@ export function DamageOverlay({ siteId }: DamageOverlayProps) {
   useEffect(() => {
     if (!data) return
 
-    // Reset every real material's highlight first -- otherwise a
-    // previously-highlighted structure would stay glowing after the
-    // operator selects a different (or no) row.
+    // Remember each material's REAL base colour once, so severity can be
+    // applied as a reversible tint. Without this, the first repaint would
+    // become the new "base" and the building could never return to
+    // looking like a building.
     for (const material of data.materialsByName.values()) {
+      if (!material.userData.baseColor) {
+        material.userData.baseColor = material.color.clone()
+      }
+      material.color.copy(material.userData.baseColor as THREE.Color)
+      material.emissive.set('#000000')
       material.emissiveIntensity = 0
     }
 
@@ -81,18 +88,57 @@ export function DamageOverlay({ siteId }: DamageOverlayProps) {
       0,
     )
 
+    /**
+     * Applies one structure's real severity WITHOUT replacing its base
+     * colour.
+     *
+     * An earlier version did `material.color.set(SEVERITY_COLORS[...])`,
+     * which repainted the whole structure. Because `Monitoring` (the
+     * correct, honest state when there is no elevated risk) is blue, a
+     * site with no flooding rendered every building and road solid blue —
+     * reading as a rendering fault rather than as "no elevated risk", and
+     * burying the real material under a flat colour.
+     *
+     * Severity is now a BLEND toward the severity colour, scaled by how
+     * severe it actually is: `Monitoring` leaves the real material
+     * completely untouched (nothing to show), and the higher states tint
+     * progressively harder and add emissive so they read at a glance.
+     * The palette is unchanged, so this still agrees with the ranking
+     * list and the citizen view — and, per the User Flow's §7
+     * accessibility rule, severity is never communicated by colour alone:
+     * `RiskRankingList` carries the real text label.
+     */
+    const applySeverity = (
+      material: THREE.MeshStandardMaterial,
+      severity: (typeof SEVERITY_ORDER)[number],
+      highlighted: boolean,
+    ) => {
+      const step = SEVERITY_ORDER.indexOf(severity)
+      const base = material.userData.baseColor as THREE.Color
+      if (step > 0) {
+        // 0.30 / 0.55 / 0.80 for Watch / Warning / Critical.
+        const blend = 0.05 + step * 0.25
+        material.color.copy(base).lerp(new THREE.Color(SEVERITY_COLORS[severity]), blend)
+        material.emissive.set(SEVERITY_COLORS[severity])
+        material.emissiveIntensity = 0.12 * step
+      }
+      if (highlighted) {
+        material.emissive.set('#eae2ef')
+        material.emissiveIntensity = 0.55
+      }
+    }
+
     const buildingEntries = damageRanking.filter(
       (entry): entry is DamageRankEntry => entry.structure_type === 'building',
     )
     for (const entry of buildingEntries) {
       const material = data.materialsByName.get(entry.structure_id)
       if (!material) continue // real entry for a structure this GLB doesn't have — skip, don't guess
-      const severity = severityForEntry(entry, currentHour, maxRiskScore)
-      material.color.set(SEVERITY_COLORS[severity])
-      if (entry.structure_id === highlightedStructureId) {
-        material.emissive.set('#eae2ef')
-        material.emissiveIntensity = 0.55
-      }
+      applySeverity(
+        material,
+        severityForEntry(entry, currentHour, maxRiskScore),
+        entry.structure_id === highlightedStructureId,
+      )
     }
 
     const roadEntries = damageRanking.filter(
@@ -106,11 +152,11 @@ export function DamageOverlay({ siteId }: DamageOverlayProps) {
           const severity = severityForEntry(entry, currentHour, maxRiskScore)
           worstSeverityIndex = Math.max(worstSeverityIndex, SEVERITY_ORDER.indexOf(severity))
         }
-        roadMaterial.color.set(SEVERITY_COLORS[SEVERITY_ORDER[worstSeverityIndex]])
-        if (roadEntries.some((entry) => entry.structure_id === highlightedStructureId)) {
-          roadMaterial.emissive.set('#eae2ef')
-          roadMaterial.emissiveIntensity = 0.55
-        }
+        applySeverity(
+          roadMaterial,
+          SEVERITY_ORDER[worstSeverityIndex],
+          roadEntries.some((entry) => entry.structure_id === highlightedStructureId),
+        )
       }
     }
   }, [data, damageRanking, currentHour, highlightedStructureId])

@@ -74,5 +74,13 @@ class Settings(BaseSettings):
     # module docstring.
     stage1a_regional_forecast_url: Optional[str] = None
 
+    # Real browser origins allowed to call this API (same convention as
+    # Stage 4's cors_allowed_origins) -- an explicit allowlist, never "*".
+    cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
 
 settings = Settings()

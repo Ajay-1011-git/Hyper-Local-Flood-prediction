@@ -56,11 +56,23 @@ describe('endpoint paths match the real backend routes', () => {
     )
   })
 
-  it('builds Stage 2 simulation URL with the real path', async () => {
+  it('builds Stage 2 simulation URL with the real path, defaulting to the real scenario', async () => {
     const spy = stubFetch({ simulation_id: 'x' })
     await fetchSimulationResult('vit-vellore')
+    // `scenario` is always explicit: Stage 2 stores a real-forecast and a
+    // hypothetical heavy-rain simulation per site, and silently getting
+    // the wrong one would be a real correctness bug, not a cosmetic one.
     expect(spy).toHaveBeenCalledWith(
-      `${STAGE_BASE_URLS.stage2}/api/simulation/site/vit-vellore`,
+      `${STAGE_BASE_URLS.stage2}/api/simulation/site/vit-vellore?scenario=real`,
+      undefined,
+    )
+  })
+
+  it('requests the heavy-rain scenario when asked for it', async () => {
+    const spy = stubFetch({ simulation_id: 'x' })
+    await fetchSimulationResult('vit-vellore', 'heavy')
+    expect(spy).toHaveBeenCalledWith(
+      `${STAGE_BASE_URLS.stage2}/api/simulation/site/vit-vellore?scenario=heavy`,
       undefined,
     )
   })

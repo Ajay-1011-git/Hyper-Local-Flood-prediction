@@ -58,6 +58,7 @@ from datetime import datetime, timezone
 
 import requests
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.stage3.config import settings
 from backend.stage3.db import get_redis_client
@@ -78,6 +79,18 @@ from backend.stage3.shared.contracts import (
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Stage 3 — Damage Ranking")
+
+# Real browser origins allowed to call this API -- an explicit allowlist,
+# never "*" (same convention as Stage 4's routes.py). Closes the CORS gap
+# flagged in Stage 4's own routes.py comment: the frontend calls this
+# stage directly (frontend/src/api/client.ts), not through Stage 4.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -129,13 +142,20 @@ def _mock_simulation_result(site_id: str) -> SimulationResult:
     )
 
 
-def _get_simulation_result(site_id: str) -> tuple[SimulationResult, str]:
+def _get_simulation_result(site_id: str, scenario: str = "real") -> tuple[SimulationResult, str]:
     """Returns (result, source) where source is 'stage2_live' or
-    'mock_dev_fixture'."""
+    'mock_dev_fixture'.
+
+    `scenario` is passed straight through to Stage 2, which runs two real
+    simulations per site (see its own `precompute.py` docstring): the real
+    forecast, and an explicitly-hypothetical heavy-rain case. Ranking the
+    wrong one against the other's hazard would be a real correctness bug,
+    so the scenario travels with the request rather than being assumed.
+    """
     if settings.stage2_simulation_result_base_url:
         url = f"{settings.stage2_simulation_result_base_url}/{site_id}"
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, params={"scenario": scenario}, timeout=60)
             resp.raise_for_status()
             return SimulationResult.model_validate(resp.json()), "stage2_live"
         except Exception as exc:
@@ -154,15 +174,20 @@ def _get_simulation_result(site_id: str) -> tuple[SimulationResult, str]:
 
 
 @app.get("/api/damage-ranking/{site_id}", response_model=list[DamageRankEntry])
-async def get_damage_ranking(site_id: str, response: Response) -> list[DamageRankEntry]:
-    sim_result, sim_source = _get_simulation_result(site_id)
+async def get_damage_ranking(
+    site_id: str, response: Response, scenario: str = "real"
+) -> list[DamageRankEntry]:
+    sim_result, sim_source = _get_simulation_result(site_id, scenario)
 
+    # `simulation_id` already encodes the scenario (Stage 2 prefixes it),
+    # so this key can never serve one scenario's ranking for the other.
     cache_key = f"damage_ranking:{site_id}:{sim_result.simulation_id}"
     redis = get_redis_client()
 
     cached = await redis.get(cache_key)
     if cached is not None:
         response.headers["X-Simulation-Source"] = sim_source
+        response.headers["X-Simulation-Scenario"] = scenario
         response.headers["X-Cache"] = "hit-redis"
         return [DamageRankEntry.model_validate(entry) for entry in json.loads(cached)]
 
@@ -193,5 +218,6 @@ async def get_damage_ranking(site_id: str, response: Response) -> list[DamageRan
 
     response.headers["X-Simulation-Source"] = sim_source
     response.headers["X-Geometry-Source"] = geometry_source
+    response.headers["X-Simulation-Scenario"] = scenario
     response.headers["X-Cache"] = "miss"
     return entries

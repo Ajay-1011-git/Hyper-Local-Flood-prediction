@@ -35,6 +35,14 @@ backend/stage2/blender_prep/output/**
 .vscode/
 .idea/
 
+# run_all.sh output
+/logs/
+
+# Path shim run_all.sh creates so DEM paths stored relative to the repo
+# root also resolve for the stages that must run from backend/. A symlink
+# into gitignored data -- recreated on demand, never committed.
+/backend/data/
+
 # cfgrib writes a per-file index cache beside any GRIB2 it opens.
 # Generated artifact, not a fixture -- never commit it.
 *.grib2.*.idx

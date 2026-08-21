@@ -50,10 +50,33 @@ export function SimplifiedMap({ areaPolygon }: SimplifiedMapProps) {
 
   const marker = geo.status === 'found' ? projection.project(geo.lat, geo.lon) : null
 
+  // Real scale bar: pick a round ground distance that fits comfortably,
+  // then draw it at its true projected length. Never a decorative bar
+  // with an invented number on it.
+  const scaleOptions = [50, 100, 200, 500, 1000]
+  const scaleMetres =
+    scaleOptions.find((m) => m / projection.metresPerUnit <= VIEW_SIZE * 0.3) ?? scaleOptions[0]
+  const scaleUnits = scaleMetres / projection.metresPerUnit
+
   return (
     <div data-testid="simplified-map">
       <svg viewBox={`0 0 ${VIEW_SIZE} ${VIEW_SIZE}`} width="100%" style={{ display: 'block' }}>
         <rect x={0} y={0} width={VIEW_SIZE} height={VIEW_SIZE} fill="var(--citizen-panel)" />
+
+        {/* Surrounding grid — real context so the shaded area reads as an
+            area within a place, not as a solid block of colour filling
+            the whole frame (the bug this replaces). Purely a backdrop:
+            it encodes no data and is drawn faintly so it never competes
+            with the real shaded area. */}
+        <g stroke="var(--citizen-border)" strokeOpacity={0.35} strokeWidth={1}>
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line key={`h${f}`} x1={0} y1={VIEW_SIZE * f} x2={VIEW_SIZE} y2={VIEW_SIZE * f} />
+          ))}
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line key={`v${f}`} x1={VIEW_SIZE * f} y1={0} x2={VIEW_SIZE * f} y2={VIEW_SIZE} />
+          ))}
+        </g>
+
         <polygon
           points={polygonToSvgPoints(projection, areaPolygon)}
           fill="var(--sev-warning)"
@@ -61,12 +84,51 @@ export function SimplifiedMap({ areaPolygon }: SimplifiedMapProps) {
           stroke="var(--sev-warning)"
           strokeWidth={2}
         />
+
         {marker && (
           <g>
             <circle cx={marker.x} cy={marker.y} r={7} fill="var(--pixel-accent)" stroke="#fff" strokeWidth={2} />
           </g>
         )}
+
+        {/* North arrow. */}
+        <g transform={`translate(${VIEW_SIZE - 24}, 22)`}>
+          <line x1={0} y1={12} x2={0} y2={-8} stroke="var(--citizen-text-dim)" strokeWidth={2} />
+          <polygon points="0,-13 -4,-5 4,-5" fill="var(--citizen-text-dim)" />
+          <text
+            x={0}
+            y={24}
+            textAnchor="middle"
+            fill="var(--citizen-text-dim)"
+            style={{ fontSize: 10 }}
+          >
+            N
+          </text>
+        </g>
+
+        {/* Real scale bar. */}
+        <g transform={`translate(16, ${VIEW_SIZE - 18})`}>
+          <line x1={0} y1={0} x2={scaleUnits} y2={0} stroke="var(--citizen-text-dim)" strokeWidth={2} />
+          <line x1={0} y1={-4} x2={0} y2={4} stroke="var(--citizen-text-dim)" strokeWidth={2} />
+          <line
+            x1={scaleUnits}
+            y1={-4}
+            x2={scaleUnits}
+            y2={4}
+            stroke="var(--citizen-text-dim)"
+            strokeWidth={2}
+          />
+          <text x={0} y={-8} fill="var(--citizen-text-dim)" style={{ fontSize: 10 }}>
+            {scaleMetres} m
+          </text>
+        </g>
       </svg>
+      <p
+        className="font-pixel-body"
+        style={{ color: 'var(--citizen-text-dim)', fontSize: '1rem', marginTop: 4 }}
+      >
+        The shaded area is the area this alert covers.
+      </p>
       <p className="font-pixel-body" style={{ color: 'var(--citizen-text-dim)', fontSize: '1rem', marginTop: 4 }}>
         {geo.status === 'found' && 'Your location is marked.'}
         {geo.status === 'denied' && 'Location permission denied — your location isn\'t shown.'}

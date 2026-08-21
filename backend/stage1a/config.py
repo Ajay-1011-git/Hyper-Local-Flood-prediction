@@ -90,6 +90,14 @@ class Stage1ASettings(BaseSettings):
     target_site_lat: Optional[float] = None
     target_site_lon: Optional[float] = None
 
+    # Real browser origins allowed to call this API (same convention as
+    # Stage 4's cors_allowed_origins) -- an explicit allowlist, never "*".
+    cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
     @model_validator(mode="before")
     @classmethod
     def _strip_inline_env_comments(cls, data: Any) -> Any:

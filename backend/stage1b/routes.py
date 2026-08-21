@@ -94,6 +94,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from backend.shared.contracts import (
@@ -137,6 +138,18 @@ from backend.stage1b.tnwrd.nearest_station import (
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Stage 1B — Hyperlocal Flood Prediction")
+
+# Real browser origins allowed to call this API -- an explicit allowlist,
+# never "*" (same convention as Stage 4's routes.py). Closes the CORS gap
+# flagged in Stage 4's own routes.py comment: the frontend calls this
+# stage directly (frontend/src/api/client.ts), not through Stage 4.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # How close a requested (lat, lon) must be to TARGET_SITE_LAT/LON to be
 # served by this demo deployment's single calibrated site. Flagged per

@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from stage1a.config import get_settings
@@ -49,6 +50,18 @@ from stage1a.wn2mini.errors import WN2Error
 TARGET_REGION_BBOX = BoundingBox(min_lat=8.0, max_lat=14.0, min_lon=76.0, max_lon=82.0)
 
 app = FastAPI(title="Stage 1A — Regional Forecast Acquisition")
+
+# Real browser origins allowed to call this API -- an explicit allowlist,
+# never "*" (same convention as Stage 4's routes.py). Closes the CORS gap
+# flagged in Stage 4's own routes.py comment: the frontend calls this
+# stage directly (frontend/src/api/client.ts), not through Stage 4.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _current_forecast_window() -> datetime:

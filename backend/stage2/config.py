@@ -40,6 +40,14 @@ class Stage2Settings(BaseSettings):
     database_url: str = "postgresql://localhost:5432/floodsystem"
     redis_url: str = "redis://localhost:6379/0"
 
+    # ---- Precompute (manual equivalent of the Celery-orchestrated T2.1-T2.7
+    # pipeline the routes.py module docstring describes as out of scope --
+    # see precompute.py) ----
+    target_site_id: str = "vit-vellore"
+    target_site_lat: float = 12.969223
+    target_site_lon: float = 79.155934
+    stage1b_downscaled_forecast_base_url: str = "http://127.0.0.1:8011"
+
     # Confirmed in T2.2: Stage 1B's `dem_metadata` table (which points at
     # the real terrain GeoTIFF on disk) has no HTTP API — it's read via a
     # direct, standalone DB query (see terrain/dem_source.py). Defaults to
@@ -57,6 +65,14 @@ class Stage2Settings(BaseSettings):
     sensor_target_x_m: Optional[float] = None
     sensor_target_y_m: Optional[float] = None
     sensor_mount_height_m: Optional[float] = None
+
+    # Real browser origins allowed to call this API (same convention as
+    # Stage 4's cors_allowed_origins) -- an explicit allowlist, never "*".
+    cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
 
     @model_validator(mode="before")
     @classmethod

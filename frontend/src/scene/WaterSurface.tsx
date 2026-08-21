@@ -37,6 +37,7 @@
  */
 
 import { useEffect, useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useQuery } from '@tanstack/react-query'
 import * as THREE from 'three'
 
@@ -44,6 +45,7 @@ import { fetchSiteMeshNodes, queryKeys } from '../api/client'
 import { useSceneStore } from '../store/sceneStore'
 import type { NodeState } from '../api/types'
 import { applyDepths, buildWaterGrid } from './waterGeometry'
+import { createFlowMaterial } from './waterMaterial'
 
 const EMPTY_NODE_STATES: Record<string, NodeState> = {}
 
@@ -67,6 +69,15 @@ export function WaterSurface({ siteId, onWetVertexCountChange }: WaterSurfacePro
 
   const grid = useMemo(() => (meshNodes ? buildWaterGrid(meshNodes) : null), [meshNodes])
 
+  // One material instance for the lifetime of the component — rebuilding
+  // it per render would recompile the shader program every frame.
+  const flow = useMemo(() => createFlowMaterial(), [])
+  useEffect(() => () => flow.material.dispose(), [flow])
+
+  // Real elapsed-time drive for the flow animation. This is the only
+  // non-simulation input to the render (see waterMaterial.ts's docstring).
+  useFrame((state) => flow.setTime(state.clock.getElapsedTime()))
+
   const nodeStatesByHour = useSceneStore((s) => s.nodeStatesByHour)
   const currentHour = useSceneStore((s) => s.currentHour)
   const nodeStates = nodeStatesByHour[currentHour] ?? EMPTY_NODE_STATES
@@ -80,6 +91,27 @@ export function WaterSurface({ siteId, onWetVertexCountChange }: WaterSurfacePro
       grid.baseElevationByVertex,
       nodeStates,
     )
+
+    // Real per-vertex depth + velocity, handed to the flow shader. Created
+    // once, then updated in place on every hour change.
+    const vertexCount = grid.nodeIdByVertex.length
+    let depthAttr = grid.geometry.getAttribute('aDepth') as THREE.BufferAttribute | undefined
+    let velocityAttr = grid.geometry.getAttribute('aVelocity') as THREE.BufferAttribute | undefined
+    if (!depthAttr || !velocityAttr) {
+      depthAttr = new THREE.BufferAttribute(new Float32Array(vertexCount), 1)
+      velocityAttr = new THREE.BufferAttribute(new Float32Array(vertexCount), 1)
+      grid.geometry.setAttribute('aDepth', depthAttr)
+      grid.geometry.setAttribute('aVelocity', velocityAttr)
+    }
+    for (let i = 0; i < vertexCount; i += 1) {
+      const nodeId = grid.nodeIdByVertex[i]
+      const state = nodeId ? nodeStates[nodeId] : undefined
+      depthAttr.setX(i, state ? Math.max(state.depth_mean_m, 0) : 0)
+      velocityAttr.setX(i, state ? Math.max(state.velocity_mean_mps, 0) : 0)
+    }
+    depthAttr.needsUpdate = true
+    velocityAttr.needsUpdate = true
+
     grid.geometry.computeVertexNormals()
     onWetVertexCountChange?.(wetCount)
   }, [grid, nodeStates, onWetVertexCountChange])
@@ -94,21 +126,7 @@ export function WaterSurface({ siteId, onWetVertexCountChange }: WaterSurfacePro
   if (!grid) return null
   if (Object.keys(nodeStates).length === 0) return null
 
-  return (
-    <mesh geometry={grid.geometry} name="water-surface">
-      <meshPhysicalMaterial
-        color="#2f6f9e"
-        transparent
-        opacity={0.72}
-        roughness={0.15}
-        metalness={0}
-        side={THREE.DoubleSide}
-        polygonOffset
-        polygonOffsetFactor={-4}
-        polygonOffsetUnits={-4}
-      />
-    </mesh>
-  )
+  return <mesh geometry={grid.geometry} material={flow.material} name="water-surface" />
 }
 
 export default WaterSurface

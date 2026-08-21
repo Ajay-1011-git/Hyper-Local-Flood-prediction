@@ -21,3 +21,8 @@ redis==8.1.0
 requests==2.34.2               # fetching Stage 2's live SimulationResult
 httpx==0.28.1                  # required by FastAPI's TestClient / AsyncClient
 uvicorn==0.52.4                # running the app for real (VERIFY, dev)
+# Real demo-site geometry: demo_site/real_geometry.py cross-imports Stage 2's
+# own GLB loader (see its module docstring). Without this the import fails and
+# the ranking silently degrades to placeholder geometry -- 3 structures instead
+# of the real 2 buildings + 41 road segments.
+trimesh==5.0.0
