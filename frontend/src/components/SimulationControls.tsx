@@ -191,7 +191,18 @@ export function SimulationControls({
           style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ops-text-dim)', lineHeight: 1.4 }}
         >
           {provenance.member_count} ensemble members over {provenance.node_count.toLocaleString()}{' '}
-          mesh nodes at {provenance.grid_resolution_m} m.{' '}
+          mesh nodes at {provenance.grid_resolution_m} m
+          {/* Absent on results persisted before this field existed —
+              omitted rather than rendered as a blank or a guess. */}
+          {provenance.hours_covered
+            ? `, covering ${provenance.hours_covered} h${
+                provenance.forecast_hours_available &&
+                provenance.hours_covered < provenance.forecast_hours_available
+                  ? ` of the ${provenance.forecast_hours_available} h forecast`
+                  : ''
+              }`
+            : ''}
+          .{' '}
           {provenance.engine === 'numerical_solver' ? (
             <>
               Computed by the <strong>numerical solver</strong> — the GNN emulator&apos;s

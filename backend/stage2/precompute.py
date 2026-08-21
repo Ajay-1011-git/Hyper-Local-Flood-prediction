@@ -481,6 +481,14 @@ def run_precompute_for_site(
         "grid_resolution_m": settings.terrain_grid_resolution_m,
         "hazard_threshold_m": HAZARD_THRESHOLD_M,
         "engine": engine,
+        # The horizon the shipped result ACTUALLY covers. These differ:
+        # the GNN emulator rolls out the whole forecast, while the solver
+        # fallback covers only SOLVER_TRAINING_STEPS (the window that is
+        # affordable to integrate numerically). A consumer that assumed
+        # 72h because the forecast is 72h would be wrong whenever the
+        # fallback ran, so the real number is reported rather than implied.
+        "hours_covered": int(result.envelope.get("total_hours", 0) * HOURS_PER_STEP),
+        "forecast_hours_available": int(len(ordered) * HOURS_PER_STEP),
         "mass_conservation_ratio": round(ratio, 3),
         "validation_depth_mae_m": round(depth_mae_m, 5),
         "validation_velocity_mae_mps": round(velocity_mae_mps, 5),

@@ -140,6 +140,11 @@ export interface SimulationProvenance {
    *  in which case the numerical solver's output is used instead. */
   engine: 'gnn_emulator' | 'numerical_solver'
   mass_conservation_ratio: number
+  /** Hours the shipped result actually covers, vs how many the forecast
+   *  offers. The solver fallback covers a shorter window than the
+   *  emulator would, so these can legitimately differ. */
+  hours_covered?: number
+  forecast_hours_available?: number
   rainfall_scale_factor: number
   heavy_target_mm_per_24h: number | null
   source_forecast_id: string
