@@ -22,10 +22,17 @@
  */
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { fetchAlert, queryKeys } from '../api/client'
+import {
+  ApiError,
+  fetchActiveAlert,
+  fetchAlert,
+  issueAlert,
+  queryKeys,
+  withdrawAlert,
+} from '../api/client'
+import BackLink from '../components/BackLink'
 import CapXmlViewer from '../components/CapXmlViewer'
 import PixelButton from '../components/pixel/PixelButton'
 import PixelPanel from '../components/pixel/PixelPanel'
@@ -46,6 +53,26 @@ export function AlertComposer() {
     queryFn: () => fetchAlert(SITE_ID),
     staleTime: Infinity,
     retry: false,
+  })
+
+  const queryClient = useQueryClient()
+
+  // Is a warning currently in effect for the public? A 404 is the real
+  // "nothing issued" answer, not an error.
+  const { data: activeAlert, error: activeError } = useQuery({
+    queryKey: queryKeys.activeAlert(SITE_ID),
+    queryFn: () => fetchActiveAlert(SITE_ID),
+    retry: false,
+  })
+  const isActive = Boolean(activeAlert) && !(activeError instanceof ApiError)
+
+  const invalidateActive = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.activeAlert(SITE_ID) })
+  }
+  const issue = useMutation({ mutationFn: () => issueAlert(SITE_ID), onSuccess: invalidateActive })
+  const withdraw = useMutation({
+    mutationFn: () => withdrawAlert(SITE_ID),
+    onSuccess: invalidateActive,
   })
 
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null)
@@ -73,13 +100,7 @@ export function AlertComposer() {
       style={{ minHeight: '100vh', background: 'var(--ops-bg)', color: 'var(--ops-text)', padding: '1.5rem' }}
       className="font-sans"
     >
-      <Link
-        to="/dashboard"
-        className="font-pixel-body"
-        style={{ color: 'var(--pixel-accent)', fontSize: '1.1rem' }}
-      >
-        ◂ Back to Dashboard
-      </Link>
+      <BackLink to="/dashboard" label="Back to Dashboard" style={{ color: 'var(--pixel-accent)', fontSize: '1.1rem' }} />
       <h1 className="font-pixel-display" style={{ fontSize: '1.1rem', margin: '1rem 0' }}>
         Alert Composer
       </h1>
@@ -153,6 +174,61 @@ export function AlertComposer() {
                 {alert.text_by_language[activeLanguage] ?? 'No preview text for this language.'}
               </p>
             </PixelPanel>
+          </div>
+
+          {/* ISSUE / WITHDRAW -- the real public-facing decision.
+              Everything above this point is a DRAFT: it is derived
+              automatically from the current simulation, and the Citizen
+              View shows none of it until a person here decides to issue
+              it. That decision is deliberately a separate, explicit,
+              reversible action rather than something a simulation can
+              trigger on its own. */}
+          <div
+            data-testid="alert-issuance"
+            style={{
+              marginTop: '1.5rem',
+              padding: '0.9rem 1rem',
+              border: '2px solid var(--pixel-border, #4b4788)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div className="font-data" style={{ fontSize: '0.95rem' }}>
+              {isActive ? (
+                <span data-testid="alert-status-active" style={{ color: 'var(--sev-warning)' }}>
+                  ● This alert is LIVE on the public Citizen View.
+                </span>
+              ) : (
+                <span data-testid="alert-status-inactive" style={{ color: 'var(--ops-text-dim)' }}>
+                  ○ Draft only — nothing is published to the public right now.
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <PixelButton
+                variant="primary"
+                data-testid="issue-alert-button"
+                disabled={issue.isPending}
+                onClick={() => issue.mutate()}
+              >
+                {issue.isPending ? 'Issuing…' : isActive ? 'Re-issue alert' : 'Issue alert to public ▸'}
+              </PixelButton>
+              <PixelButton
+                data-testid="withdraw-alert-button"
+                disabled={!isActive || withdraw.isPending}
+                onClick={() => withdraw.mutate()}
+              >
+                {withdraw.isPending ? 'Withdrawing…' : 'Withdraw alert'}
+              </PixelButton>
+            </div>
+            {(issue.isError || withdraw.isError) && (
+              <p className="font-data" style={{ color: 'var(--sev-critical)', margin: 0, fontSize: '0.9rem' }}>
+                {(issue.error ?? withdraw.error) instanceof Error
+                  ? ((issue.error ?? withdraw.error) as Error).message
+                  : 'Action failed.'}
+              </p>
+            )}
           </div>
 
           <div style={{ marginTop: '1.5rem' }}>

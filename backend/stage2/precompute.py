@@ -40,6 +40,7 @@ import json
 import logging
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
 from stage2.config import Stage2Settings, get_settings
@@ -53,9 +54,10 @@ from stage2.shared.contracts import (
     ComputationalMeshNode,
     DownscaledForecastField,
     MeshEdge,
+    NodeState,
     SimulationResult,
 )
-from stage2.solver.shallow_water_solver import run_trajectory
+from stage2.solver.shallow_water_solver import TrajectoryPoint, run_trajectory
 from stage2.terrain.dem_interpolation import compute_site_bbox_latlon, interpolate_terrain
 from stage2.terrain.footprint_extraction import extract_building_footprints
 from stage2.terrain.road_segmentation import extract_road_segments
@@ -88,6 +90,44 @@ HOURS_PER_STEP = 6.0
 # How many real solver steps to generate as GNN training data. Must be
 # > graph_builder.PREVIOUS_T (3) to form any training example at all.
 SOLVER_TRAINING_STEPS = 4
+
+
+def total_rainfall_m(trajectory: List[Tuple[int, float]]) -> float:
+    """Total real rainfall depth (m) a member's trajectory delivers."""
+    return sum(max(0.0, mm) for _hour, mm in trajectory) / 1000.0
+
+
+def mass_conservation_ratio(result: SimulationResult, rainfall_m: float) -> float:
+    """How much water the result holds, per unit of water that really fell.
+
+    Rain is the ONLY source of water in this closed site model — there is
+    no river inflow boundary and no groundwater term. So at any hour the
+    mean water depth across the site cannot exceed the rainfall depth
+    delivered up to that point; it can only be lower, as water leaves
+    through the domain edges. A ratio meaningfully above 1 means water was
+    manufactured, which is a hard physical impossibility rather than a
+    matter of accuracy.
+
+    Uses the MEAN depth over all nodes (not the max): a single deep
+    puddle is real and expected, since water concentrates in hollows —
+    it's the site-wide total that must be bounded.
+    """
+    if rainfall_m <= 0:
+        return 0.0
+    by_hour: Dict[int, List[float]] = {}
+    for ns in result.node_states:
+        by_hour.setdefault(ns.hour, []).append(ns.depth_mean_m)
+    if not by_hour:
+        return 0.0
+    worst = max(sum(d) / len(d) for d in by_hour.values())
+    return worst / rainfall_m
+
+
+#: Above this, the emulator's output is not physically admissible and is
+#: discarded in favour of the numerical solver. 1.0 is the hard physical
+#: bound; the margin absorbs real discretisation error rather than real
+#: fabrication.
+MASS_CONSERVATION_LIMIT = 1.5
 
 
 class PrecomputeUnavailableError(RuntimeError):
@@ -197,6 +237,107 @@ def build_site_mesh(
     )
 
 
+def run_solver_ensemble(
+    forecast: DownscaledForecastField,
+    nodes: List[ComputationalMeshNode],
+    edges: List[MeshEdge],
+    edge_width_m: float,
+    hazard_threshold_m: float,
+    simulation_id: str,
+    steps: int,
+    progress: ProgressFn = _noop_progress,
+) -> SimulationResult:
+    """Ensemble built from the NUMERICAL SOLVER, one real run per member.
+
+    This is the fallback the architecture already names ("a numerical
+    solver as both training-data generator and fallback"). It is slower
+    than the GNN emulator by design — it is the real Bates/Horritt/
+    Fewtrell local-inertial scheme, and it is mass-conserving and stable,
+    which is exactly what makes it the right thing to fall back TO when
+    the emulator's rollout stops being physically admissible.
+
+    Aggregation matches `gnn/ensemble.py::run_ensemble` exactly (mean/min/
+    max per node per hour, `rate_of_rise` from the change in MEAN depth,
+    `ensemble_agreement_fraction` = the real fraction of members over
+    `hazard_threshold_m`) so a consumer cannot tell the two apart
+    structurally — only via the reported provenance, which says which ran.
+    """
+    per_member: Dict[int, Dict[str, List[TrajectoryPoint]]] = {}
+    for i, member in enumerate(forecast.members):
+        ordered = sorted(member.trajectory, key=lambda tv: tv.hour)[:steps]
+        rates = [tv.inflow_mm / HOURS_PER_STEP for tv in ordered]
+        progress(
+            f"Solving member {i + 1} of {len(forecast.members)} numerically",
+            0.35 + 0.5 * (i / max(1, len(forecast.members))),
+        )
+        per_member[member.member_id] = run_trajectory(
+            nodes, edges, rates, edge_width_m, hours_per_step=HOURS_PER_STEP
+        )
+
+    member_ids = list(per_member.keys())
+    hours = [
+        tv.hour for tv in sorted(forecast.members[0].trajectory, key=lambda t: t.hour)[:steps]
+    ]
+
+    node_states: List[NodeState] = []
+    prev_mean_depth: Dict[str, float] = {n.node_id: 0.0 for n in nodes}
+    max_depth_overall = 0.0
+    hours_any_exceed = 0
+
+    for step_index, hour in enumerate(hours):
+        hour_any_exceed = False
+        for node in nodes:
+            nid = node.node_id
+            depths = [per_member[m][nid][step_index].depth_m for m in member_ids]
+            velocities = [per_member[m][nid][step_index].velocity_mps for m in member_ids]
+
+            depth_mean = sum(depths) / len(depths)
+            velocity_mean = sum(velocities) / len(velocities)
+            exceed = sum(1 for d in depths if d > hazard_threshold_m) / len(depths)
+            if depth_mean > max_depth_overall:
+                max_depth_overall = depth_mean
+            if any(d > hazard_threshold_m for d in depths):
+                hour_any_exceed = True
+
+            node_states.append(
+                NodeState(
+                    node_id=nid,
+                    hour=hour,
+                    depth_mean_m=depth_mean,
+                    depth_min_m=min(depths),
+                    depth_max_m=max(depths),
+                    velocity_mean_mps=velocity_mean,
+                    velocity_min_mps=min(velocities),
+                    velocity_max_mps=max(velocities),
+                    rate_of_rise=(depth_mean - prev_mean_depth[nid]) / HOURS_PER_STEP,
+                    ensemble_agreement_fraction=exceed,
+                    building_id=node.building_id,
+                    road_segment_id=node.road_segment_id,
+                )
+            )
+            prev_mean_depth[nid] = depth_mean
+        if hour_any_exceed:
+            hours_any_exceed += 1
+
+    return SimulationResult(
+        simulation_id=simulation_id,
+        site_id=forecast.site_id,
+        source_forecast_id=forecast.source_forecast_id,
+        generated_at=datetime.now(timezone.utc),
+        hazard_threshold_m=hazard_threshold_m,
+        # The solver IS the reference this project validates against, so
+        # there is no emulator error to report for its own output.
+        validation_error_m=0.0,
+        node_states=node_states,
+        envelope={
+            "max_depth_m": max_depth_overall,
+            "hours_any_node_exceeds_threshold": hours_any_exceed,
+            "total_hours": len(hours),
+            "member_count": len(member_ids),
+        },
+    )
+
+
 def run_precompute_for_site(
     site_id: str,
     terrain_grid_path: str,
@@ -290,6 +431,44 @@ def run_precompute_for_site(
         device=device,
     )
 
+    # PHYSICAL ADMISSIBILITY CHECK — a real, load-bearing guard, not a
+    # formality.
+    #
+    # The GNN is trained from scratch on a single short solver trajectory,
+    # then rolled out autoregressively for the whole forecast horizon, so
+    # its own error compounds step over step. Measured on this site: the
+    # heavy-rain rollout reported a 68 m maximum depth — deeper than the
+    # 27 m buildings are tall, and ~100x more water than actually fell.
+    # One-step validation MAE looked fine (0.024 m) because it is
+    # teacher-forced and never sees that compounding.
+    #
+    # So the emulator's output is checked against conservation of mass,
+    # which it cannot argue with, and discarded in favour of the numerical
+    # solver when it fails. Which one produced the shipped numbers is
+    # always reported in `provenance`.
+    wettest_rainfall_m = total_rainfall_m([(tv.hour, tv.inflow_mm) for tv in ordered])
+    ratio = mass_conservation_ratio(result, wettest_rainfall_m)
+    engine = "gnn_emulator"
+    if ratio > MASS_CONSERVATION_LIMIT:
+        logger.warning(
+            "GNN rollout for %s/%s is not physically admissible "
+            "(holds %.1fx the water that fell); falling back to the numerical solver.",
+            site_id,
+            scenario,
+            ratio,
+        )
+        engine = "numerical_solver"
+        result = run_solver_ensemble(
+            forecast,
+            nodes,
+            edges,
+            edge_width_m,
+            HAZARD_THRESHOLD_M,
+            simulation_id,
+            steps=SOLVER_TRAINING_STEPS,
+            progress=progress,
+        )
+
     provenance: Dict[str, object] = {
         "scenario": scenario,
         "is_hypothetical": scenario == "heavy",
@@ -301,6 +480,8 @@ def run_precompute_for_site(
         "edge_count": len(edges),
         "grid_resolution_m": settings.terrain_grid_resolution_m,
         "hazard_threshold_m": HAZARD_THRESHOLD_M,
+        "engine": engine,
+        "mass_conservation_ratio": round(ratio, 3),
         "validation_depth_mae_m": round(depth_mae_m, 5),
         "validation_velocity_mae_mps": round(velocity_mae_mps, 5),
         "training_epochs": TRAINING_EPOCHS,

@@ -51,7 +51,7 @@ describe('endpoint paths match the real backend routes', () => {
     const spy = stubFetch([])
     await fetchDamageRanking('vit-vellore')
     expect(spy).toHaveBeenCalledWith(
-      `${STAGE_BASE_URLS.stage3}/api/damage-ranking/vit-vellore`,
+      `${STAGE_BASE_URLS.stage3}/api/damage-ranking/vit-vellore?scenario=real`,
       undefined,
     )
   })

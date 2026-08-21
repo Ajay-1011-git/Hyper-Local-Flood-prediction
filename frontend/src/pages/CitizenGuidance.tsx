@@ -27,7 +27,7 @@
  * silently shipping unreviewed guidance in languages nobody checked.
  */
 
-import { Link } from 'react-router-dom'
+import BackLink from '../components/BackLink'
 
 const BEFORE_STEPS = [
   'Know your area’s flood risk and evacuation routes ahead of time.',
@@ -77,9 +77,7 @@ export function CitizenGuidance() {
       className="font-sans"
     >
       <div style={{ padding: '0.75rem 1rem' }}>
-        <Link to="/citizen" className="font-pixel-body" style={{ color: 'var(--citizen-text-dim)', fontSize: '1rem' }}>
-          ◂ Back to alert
-        </Link>
+        <BackLink to="/citizen" label="Back to alert" tone="light" />
       </div>
 
       {/* Calm, neutral band -- deliberately NOT one of the four alarm

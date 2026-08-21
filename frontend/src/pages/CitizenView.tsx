@@ -26,7 +26,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
-import { fetchAlert, queryKeys } from '../api/client'
+import { ApiError, fetchActiveAlert, queryKeys } from '../api/client'
+import BackLink from '../components/BackLink'
 import SimplifiedMap from '../components/SimplifiedMap'
 import { parseAlertText } from '../citizenAlertText'
 import { LANGUAGES } from '../languages'
@@ -37,12 +38,18 @@ const SITE_ID = import.meta.env.VITE_SITE_ID ?? 'vit-vellore'
 type ShareState = 'idle' | 'shared' | 'copied' | 'failed'
 
 export function CitizenView() {
+  // Reads the ACTIVE alert, not the draft. A 404 here is the real, common
+  // and entirely correct "no warning is in effect" state -- rendered below
+  // as an explicit all-clear, never as an error and never as a blank page.
   const { data: alert, error, isPending } = useQuery({
-    queryKey: queryKeys.alert(SITE_ID),
-    queryFn: () => fetchAlert(SITE_ID),
-    staleTime: Infinity,
+    queryKey: queryKeys.activeAlert(SITE_ID),
+    queryFn: () => fetchActiveAlert(SITE_ID),
+    // Re-check periodically: a citizen leaving this page open needs to
+    // see a newly-issued (or withdrawn) alert without reloading.
+    refetchInterval: 30_000,
     retry: false,
   })
+  const noActiveAlert = error instanceof ApiError && error.status === 404
 
   const [language, setLanguage] = useState<string | null>(null)
   const [shareState, setShareState] = useState<ShareState>('idle')
@@ -87,9 +94,7 @@ export function CitizenView() {
       {/* Prominent, top-of-screen language selector -- "since language
           accessibility is a core requirement, not an afterthought." */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem' }}>
-        <Link to="/" className="font-pixel-body" style={{ color: 'var(--citizen-text-dim)', fontSize: '1rem' }}>
-          ◂ Flood Watch
-        </Link>
+        <BackLink to="/" label="Flood Watch" tone="light" />
         {availableLanguages.length > 0 && (
           <select
             aria-label="Language"
@@ -120,7 +125,33 @@ export function CitizenView() {
           Loading the current alert…
         </p>
       )}
-      {error && (
+      {noActiveAlert && (
+        <div data-testid="citizen-all-clear" style={{ padding: '1rem' }}>
+          <div
+            style={{
+              background: 'var(--citizen-panel)',
+              border: '2px solid var(--citizen-border)',
+              padding: '1.25rem 1rem',
+            }}
+          >
+            <h1 className="font-pixel-body" style={{ fontSize: 'clamp(1.3rem, 5vw, 1.9rem)', margin: 0, lineHeight: 1.3 }}>
+              No flood warning right now
+            </h1>
+            <p className="font-pixel-body" style={{ fontSize: '1.15rem', marginTop: '0.6rem', marginBottom: 0 }}>
+              There is no flood warning in effect for this area. This page will
+              update automatically if that changes.
+            </p>
+          </div>
+          <Link
+            to="/citizen/guidance"
+            className="font-pixel-body"
+            style={{ display: 'inline-block', marginTop: '1.25rem', color: 'var(--citizen-text-dim)', fontSize: '1rem' }}
+          >
+            General flood-safety guidance ▸
+          </Link>
+        </div>
+      )}
+      {error && !noActiveAlert && (
         <p className="font-pixel-body" style={{ padding: '0 1rem', fontSize: '1.2rem', color: 'var(--sev-critical)' }}>
           The alert isn't available right now. Please try again shortly.
         </p>

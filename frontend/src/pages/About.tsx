@@ -22,7 +22,7 @@
 
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import BackLink from '../components/BackLink'
 
 import { fetchRegionalForecast, queryKeys } from '../api/client'
 import { forecastSourceLabel } from '../forecastSources'
@@ -64,9 +64,7 @@ export function About() {
   return (
     <main style={{ background: 'var(--pixel-bg-0)', color: 'var(--ops-text)', minHeight: '100vh' }} className="font-sans">
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '2rem 1.25rem' }}>
-        <Link to="/" className="font-pixel-body" style={{ color: 'var(--pixel-accent)', fontSize: '1.1rem' }}>
-          ◂ Flood Watch
-        </Link>
+        <BackLink fallbackTo="/" label="Back" style={{ color: 'var(--pixel-accent)', fontSize: '1.1rem' }} />
         <h1 className="font-pixel-display" style={{ fontSize: '1.3rem', margin: '1rem 0 0.5rem' }}>
           About &amp; Methodology
         </h1>

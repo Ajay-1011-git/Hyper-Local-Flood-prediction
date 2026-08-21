@@ -15,13 +15,22 @@
 
 import { useNavigate } from 'react-router-dom'
 
+import type { SimulationScenario } from '../api/client'
+
 import { severityForEntry } from '../severity'
 import { useSceneStore } from '../store/sceneStore'
 import PixelPanel from './pixel/PixelPanel'
 import SeverityBadge from './SeverityBadge'
 import { confidencePercent, hazardSummary } from './riskSummary'
 
-export function RiskRankingList() {
+export interface RiskRankingListProps {
+  /** Which of Stage 2's two real simulations this ranking was computed
+   *  from — shown in the header so a ranking can never be read as
+   *  belonging to the other scenario. */
+  scenario?: SimulationScenario
+}
+
+export function RiskRankingList({ scenario = 'real' }: RiskRankingListProps) {
   const damageRanking = useSceneStore((s) => s.damageRanking)
   const currentHour = useSceneStore((s) => s.currentHour)
   const highlightedStructureId = useSceneStore((s) => s.highlightedStructureId)
@@ -48,9 +57,20 @@ export function RiskRankingList() {
       <h2 className="font-pixel-body" style={{ fontSize: '1.3rem', margin: 0 }}>
         Risk ranking
       </h2>
+      {/* States plainly that this is DOWNSTREAM of the simulation --
+          Stage 3 reads hazard out of Stage 2's SimulationResult, so a
+          ranking only exists once that simulation does. */}
+      <p
+        data-testid="ranking-provenance"
+        className="font-data"
+        style={{ fontSize: '0.78rem', color: 'var(--ops-text-dim)', margin: 0, lineHeight: 1.4 }}
+      >
+        Computed from the {scenario === 'heavy' ? 'heavy-rain (hypothetical)' : 'real forecast'}{' '}
+        simulation.
+      </p>
       {sorted.length === 0 && (
         <p className="font-data" style={{ fontSize: '0.85rem', color: 'var(--ops-text-dim)' }}>
-          No real structures ranked yet.
+          Run the simulation first — the ranking is computed from its output.
         </p>
       )}
       {sorted.map((entry) => {

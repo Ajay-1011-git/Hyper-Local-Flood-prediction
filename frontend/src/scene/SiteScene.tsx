@@ -17,7 +17,13 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useQuery } from '@tanstack/react-query'
 
-import { fetchDamageRanking, fetchSimulationResult, fetchSiteTerrain, queryKeys } from '../api/client'
+import {
+  fetchDamageRanking,
+  fetchSimulationResult,
+  fetchSiteTerrain,
+  queryKeys,
+  type SimulationScenario,
+} from '../api/client'
 import type { DamageRankEntry } from '../api/types'
 import { useSiteSocket } from '../hooks/useSiteSocket'
 import { SEVERITY_ORDER, severityForEntry } from '../severity'
@@ -69,11 +75,13 @@ function damageRankingSummary(damageRanking: DamageRankEntry[], currentHour: num
 
 export interface SiteSceneProps {
   siteId: string
+  /** Which of Stage 2's two real simulations to show. */
+  scenario?: SimulationScenario
   /** Render both surfaces as wireframe — makes the seam (or absence of one) checkable. */
   wireframe?: boolean
 }
 
-export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
+export function SiteScene({ siteId, scenario = 'real', wireframe = false }: SiteSceneProps) {
   const { data, isPending, error } = useQuery({
     queryKey: queryKeys.siteTerrain(siteId),
     queryFn: () => fetchSiteTerrain(siteId),
@@ -93,8 +101,8 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
   const hoursAvailable = useSceneStore((s) => s.hoursAvailable)
   const setCurrentHour = useSceneStore((s) => s.setCurrentHour)
   const { data: simulationResult, error: simulationError } = useQuery({
-    queryKey: queryKeys.simulation(siteId),
-    queryFn: () => fetchSimulationResult(siteId),
+    queryKey: queryKeys.simulation(siteId, scenario),
+    queryFn: () => fetchSimulationResult(siteId, scenario),
     staleTime: Infinity,
     retry: false,
   })
@@ -116,9 +124,16 @@ export function SiteScene({ siteId, wireframe = false }: SiteSceneProps) {
   // socket.
   const setDamageRanking = useSceneStore((s) => s.setDamageRanking)
   const damageRanking = useSceneStore((s) => s.damageRanking)
+  // GATED ON THE SIMULATION, DELIBERATELY. Stage 3 ranks structures by
+  // hazard read out of Stage 2's `SimulationResult` -- the ranking is a
+  // product of the simulation, not an independent parallel fetch. Asking
+  // for it before a simulation exists is what made Stage 3 fall back to
+  // its mock fixture and publish a ranking with no real simulation behind
+  // it. `enabled` makes the real dependency explicit in the data flow.
   const { data: damageRankingData, error: damageRankingError } = useQuery({
-    queryKey: queryKeys.damageRanking(siteId),
-    queryFn: () => fetchDamageRanking(siteId),
+    queryKey: [...queryKeys.damageRanking(siteId), scenario],
+    queryFn: () => fetchDamageRanking(siteId, scenario),
+    enabled: Boolean(simulationResult),
     staleTime: Infinity,
     retry: false,
   })

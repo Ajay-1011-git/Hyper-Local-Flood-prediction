@@ -9,6 +9,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import BackLink from './BackLink'
+
 import { LANGUAGES } from '../languages'
 import { severityForEntry, type SeverityState } from '../severity'
 import { useSceneStore } from '../store/sceneStore'
@@ -54,6 +56,7 @@ export function TopBar({ siteName }: TopBarProps) {
         background: 'var(--pixel-bg-1)',
       }}
     >
+      <BackLink to="/" label="Flood Watch" />
       <h1 className="font-pixel-display" style={{ fontSize: '0.9rem', margin: 0 }}>
         {siteName}
       </h1>

@@ -213,12 +213,24 @@ export function postSimulationAssimilate(reading: SensorReading): Promise<Simula
 
 // ---------------------------------------------------------------- Stage 3
 
-export function fetchDamageRanking(siteId: string): Promise<DamageRankEntry[]> {
-  return getJson(`${STAGE_BASE_URLS.stage3}/api/damage-ranking/${encodeURIComponent(siteId)}`)
+export function fetchDamageRanking(
+  siteId: string,
+  scenario: SimulationScenario = 'real',
+): Promise<DamageRankEntry[]> {
+  const url = new URL(`${STAGE_BASE_URLS.stage3}/api/damage-ranking/${encodeURIComponent(siteId)}`)
+  // Stage 3 ranks against whichever Stage 2 scenario is named, so this
+  // must travel with the request -- see its own routes.py docstring.
+  url.searchParams.set('scenario', scenario)
+  return getJson(url.toString())
 }
 
 // ---------------------------------------------------------------- Stage 4
 
+/**
+ * The DRAFT alert — derived automatically from the current simulation and
+ * ranking. Always returns something, and is what the Alert Composer
+ * previews. NOT what the public sees: see `fetchActiveAlert`.
+ */
 export function fetchAlert(siteId: string): Promise<Alert> {
   return getJson(`${STAGE_BASE_URLS.stage4}/api/alert/${encodeURIComponent(siteId)}`)
 }
@@ -260,6 +272,34 @@ export function fetchSiteMeshNodes(siteId: string): Promise<SiteMeshNodesRespons
 // ------------------------------------------------- TanStack Query helpers
 
 /** Query keys, centralised so a cache invalidation can't typo a key. */
+/**
+ * The alert currently IN EFFECT for the public, if any.
+ *
+ * Rejects with a 404 `ApiError` when nothing has been issued — the honest
+ * "no warning in effect" state. A draft alert existing is not the same as
+ * a warning having been issued; only a real operator pressing Issue in
+ * the Alert Composer makes one public.
+ */
+export function fetchActiveAlert(siteId: string): Promise<Alert> {
+  return getJson(`${STAGE_BASE_URLS.stage4}/api/alert/${encodeURIComponent(siteId)}/active`)
+}
+
+/** Publish the current draft alert to the Citizen View. */
+export function issueAlert(siteId: string): Promise<Alert> {
+  return getJson(`${STAGE_BASE_URLS.stage4}/api/alert/${encodeURIComponent(siteId)}/issue`, {
+    method: 'POST',
+  })
+}
+
+/** Stand down the active alert. Idempotent, and returns 204 (no body). */
+export async function withdrawAlert(siteId: string): Promise<void> {
+  const url = `${STAGE_BASE_URLS.stage4}/api/alert/${encodeURIComponent(siteId)}/withdraw`
+  const response = await fetch(url, { method: 'POST' })
+  if (!response.ok) {
+    throw new ApiError(response.status, url, await response.text().catch(() => ''))
+  }
+}
+
 export const queryKeys = {
   regionalForecast: ['regionalForecast'] as const,
   riverStage: (lat: number, lon: number) => ['riverStage', lat, lon] as const,
@@ -273,6 +313,7 @@ export const queryKeys = {
   sensorLocation: (siteId: string) => ['sensorLocation', siteId] as const,
   damageRanking: (siteId: string) => ['damageRanking', siteId] as const,
   alert: (siteId: string) => ['alert', siteId] as const,
+  activeAlert: (siteId: string) => ['activeAlert', siteId] as const,
   siteTerrain: (siteId: string) => ['siteTerrain', siteId] as const,
   siteMesh: (siteId: string) => ['siteMesh', siteId] as const,
   meshNodes: (siteId: string) => ['meshNodes', siteId] as const,

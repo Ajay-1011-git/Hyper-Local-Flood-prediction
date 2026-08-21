@@ -342,3 +342,85 @@ async def get_alert(site_id: str, response: Response) -> Alert:
     response.headers["X-Geometry-Source"] = geometry_source
     response.headers["X-Cache"] = "miss"
     return alert
+
+
+# ---------------------------------------------------------------------------
+# Alert LIFECYCLE — an alert is only public once a person issues it
+# ---------------------------------------------------------------------------
+#
+# `GET /api/alert/{site_id}` above is a DRAFT: it is derived automatically
+# from whatever simulation and ranking currently exist, and it always
+# returns something. That is exactly what the Alert Composer needs to
+# preview, and exactly what must NOT be shown to the public — it would
+# mean a CAP alert was effectively "issued" by the mere existence of a
+# simulation, with no human ever deciding to warn anyone.
+#
+# So issuance is explicit and stateful:
+#   POST /api/alert/{site_id}/issue     -- a real operator publishes it
+#   POST /api/alert/{site_id}/withdraw  -- a real operator stands it down
+#   GET  /api/alert/{site_id}/active    -- what the public actually sees
+#
+# The Citizen View reads ONLY `/active`, so it shows nothing at all until
+# someone has really decided to issue a warning.
+#
+# Stored in Redis rather than this process's memory so an issued alert
+# survives an API restart — a warning quietly disappearing because a
+# server was redeployed would be a real safety failure, not an
+# inconvenience.
+
+_ACTIVE_ALERT_KEY = "active_alert:{site_id}"
+
+
+@app.post("/api/alert/{site_id}/issue", response_model=Alert)
+async def issue_alert(site_id: str, response: Response) -> Alert:
+    """Publish the current draft alert to the public Citizen View."""
+    alert = await get_alert(site_id, response)
+    redis = get_redis_client()
+    # No TTL: an issued alert stays issued until a person withdraws it or
+    # its own `expiry_time` passes (checked on read below). Expiring it on
+    # a cache timer would silently un-warn people.
+    await redis.set(_ACTIVE_ALERT_KEY.format(site_id=site_id), alert.model_dump_json())
+    logger.info("Alert issued for %s (severity=%s)", site_id, alert.severity)
+    return alert
+
+
+@app.post("/api/alert/{site_id}/withdraw", status_code=204)
+async def withdraw_alert(site_id: str) -> Response:
+    """Stand down the active alert for `site_id`.
+
+    Idempotent: withdrawing when nothing is active is a success, not an
+    error — the caller's intent ("there should be no active alert") is
+    satisfied either way.
+    """
+    redis = get_redis_client()
+    await redis.delete(_ACTIVE_ALERT_KEY.format(site_id=site_id))
+    logger.info("Alert withdrawn for %s", site_id)
+    return Response(status_code=204)
+
+
+@app.get("/api/alert/{site_id}/active", response_model=Alert)
+async def get_active_alert(site_id: str) -> Alert:
+    """The alert the public should currently see, if any.
+
+    404 when nothing has been issued — the honest "there is no warning in
+    effect" answer, which the Citizen View renders as an explicit all-clear
+    rather than as an error.
+    """
+    redis = get_redis_client()
+    raw = await redis.get(_ACTIVE_ALERT_KEY.format(site_id=site_id))
+    if raw is None:
+        raise HTTPException(
+            status_code=404, detail=f"No alert is currently in effect for {site_id!r}."
+        )
+
+    alert = Alert.model_validate(json.loads(raw))
+
+    # A real alert carries its own expiry. Serving an expired warning as if
+    # it were live would be worse than serving none.
+    if alert.expiry_time is not None and alert.expiry_time < datetime.now(timezone.utc):
+        await redis.delete(_ACTIVE_ALERT_KEY.format(site_id=site_id))
+        raise HTTPException(
+            status_code=404,
+            detail=f"The alert for {site_id!r} expired at {alert.expiry_time.isoformat()}.",
+        )
+    return alert
