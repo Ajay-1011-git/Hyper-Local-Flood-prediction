@@ -72,7 +72,12 @@ from stage2.assimilation.errors import SensorAtWallNodeError
 from stage2.assimilation.ghost_cell_update import assimilate_reading
 from stage2.config import get_settings
 from stage2 import site_state_store
-from stage2.precompute import SCENARIOS, PrecomputeUnavailableError, run_precompute_for_site
+from stage2.precompute import (
+    SCENARIOS,
+    PrecomputeUnavailableError,
+    get_current_source_forecast_id,
+    run_precompute_for_site,
+)
 from stage2.shared.contracts import ComputationalMeshNode, MeshEdge, SimulationResult
 from backend.shared.contracts import SensorReading  # noqa: E402  (see shared/contracts.py's sys.path note)
 
@@ -246,8 +251,25 @@ async def get_simulation_provenance(site_id: str, scenario: str = "real") -> dic
     return dict(state.provenance)
 
 
-async def _run_precompute_job(site_id: str, scenario: str, max_members: int) -> None:
-    """Run one real precompute in the background and record its outcome."""
+async def _run_precompute_job(
+    site_id: str, scenario: str, max_members: int, force: bool = False
+) -> None:
+    """Run one real precompute in the background and record its outcome.
+
+    CACHE-HIT FAST PATH, checked first unless `force` is set
+    -----------------------------------------------------------------
+    A real run costs ~1-2 minutes of real physics (the solver dominates
+    it), and clicking between "Real forecast" and "What if heavy rain?"
+    is a real, expected, frequent UI action -- it should not mean
+    redoing that work every time when nothing about the underlying
+    forecast has changed. So before touching the mesh/solver/GNN at all,
+    this fetches Stage 1B's CURRENT `source_forecast_id` (one cheap JSON
+    call) and compares it against the id embedded in whatever is already
+    persisted for this site/scenario. A match means the previously-
+    computed result is still current, and is reused as-is -- a few
+    seconds of real I/O, not a re-run. `force=True` (the Composer's
+    "Re-run simulation" button) skips this and always recomputes.
+    """
     from stage2.terrain.dem_source import Stage1BTerrainUnavailableError, find_terrain_grid_path
 
     key = (site_id, scenario)
@@ -263,6 +285,51 @@ async def _run_precompute_job(site_id: str, scenario: str, max_members: int) -> 
         )
 
     settings = get_settings()
+
+    if not force:
+        report("Checking for a cached simulation", 0.02)
+        try:
+            current_forecast_id = await asyncio.to_thread(
+                get_current_source_forecast_id, settings
+            )
+        except PrecomputeUnavailableError as exc:
+            # Can't confirm freshness -- fail loudly rather than silently
+            # serving a possibly-stale cached result or a full recompute
+            # against an unreachable Stage 1B either way.
+            logger.warning(
+                "Could not check %s/%s's forecast freshness: %s", site_id, scenario, exc
+            )
+            current_forecast_id = None
+
+        if current_forecast_id is not None:
+            existing = await get_site_state(site_id, scenario)
+            if (
+                existing is not None
+                and existing.provenance.get("source_forecast_id") == current_forecast_id
+            ):
+                logger.info(
+                    "Reusing cached %s/%s simulation -- forecast unchanged (%s)",
+                    site_id,
+                    scenario,
+                    current_forecast_id,
+                )
+                _precompute_jobs[key] = PrecomputeJob(
+                    state="done", message="Simulation ready (cached)", progress=1.0
+                )
+                await connection_manager.broadcast(
+                    site_id,
+                    {
+                        "type": "simulation_update",
+                        "payload": {
+                            "scenario": scenario,
+                            "simulation_id": existing.latest_result.simulation_id,
+                            "node_states": [],
+                            "envelope": existing.latest_result.envelope,
+                        },
+                    },
+                )
+                return
+
     try:
         # The one real async I/O call, awaited on the real event loop --
         # see precompute.py's own docstring for why it can't move into the
@@ -310,15 +377,18 @@ async def _run_precompute_job(site_id: str, scenario: str, max_members: int) -> 
 
 @app.post("/api/simulation/precompute/{site_id}", status_code=202)
 async def post_simulation_precompute(
-    site_id: str, scenario: str = "real", max_members: int = 5
+    site_id: str, scenario: str = "real", max_members: int = 5, force: bool = False
 ) -> dict:
     """Start the real T2.1-T2.7 pipeline for one scenario, in the background.
 
-    Returns 202 immediately: a real run on the real 7,458-node mesh takes
-    ~1-2 minutes (real measured figure -- the numerical solver that
-    generates the GNN's training data dominates it), which no browser
-    request should be held open for. Poll
-    `GET /api/simulation/precompute/{site_id}/status` for real progress.
+    Returns 202 immediately. A genuine recompute on the real 7,458-node
+    mesh takes ~1-2 minutes (the numerical solver that generates the
+    GNN's training data dominates it) -- but when a previously-computed
+    result for this site/scenario is still current (Stage 1B's forecast
+    hasn't changed), `_run_precompute_job` reuses it instead, which is a
+    few seconds of real I/O, not a re-run. See that function's own
+    docstring. `force=True` always recomputes (the Composer's "Re-run
+    simulation" button).
 
     Not a TRD SS4 violation of "never computes on demand": the real read
     path (`GET /api/simulation/site/{site_id}`) still only ever serves
@@ -341,7 +411,7 @@ async def post_simulation_precompute(
     _precompute_jobs[key] = PrecomputeJob(
         state="running", message="Starting", progress=0.0
     )
-    asyncio.create_task(_run_precompute_job(site_id, scenario, max_members))
+    asyncio.create_task(_run_precompute_job(site_id, scenario, max_members, force))
     return {"state": "running", "message": "Starting", "progress": 0.0}
 
 

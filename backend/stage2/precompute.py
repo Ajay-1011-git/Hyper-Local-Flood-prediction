@@ -162,6 +162,22 @@ def _fetch_downscaled_forecast(
     return DownscaledForecastField.model_validate(payload)
 
 
+def get_current_source_forecast_id(settings: Optional[Stage2Settings] = None) -> str:
+    """The `source_forecast_id` Stage 1B's downscaled forecast carries right now.
+
+    A cheap real network call (one JSON fetch, no mesh/solver/GNN work),
+    used by `routes.py` to decide whether a previously-computed simulation
+    is still current before redoing the whole ~1-2 minute pipeline. The
+    same id is embedded in the trained/persisted `SimulationResult`'s own
+    provenance (see `run_precompute_for_site` below), so comparing the two
+    directly answers "has the real forecast changed since we last
+    computed this?" without re-running anything.
+    """
+    settings = settings or get_settings()
+    forecast = _fetch_downscaled_forecast(settings, settings.target_site_lat, settings.target_site_lon)
+    return forecast.source_forecast_id
+
+
 def scale_forecast_to_heavy(
     forecast: DownscaledForecastField,
     target_mm_per_24h: float = HEAVY_TARGET_MM_PER_24H,

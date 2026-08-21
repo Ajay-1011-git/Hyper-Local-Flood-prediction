@@ -189,15 +189,26 @@ export function fetchSimulationProvenance(
   )
 }
 
-/** Starts a real precompute run. Returns immediately (HTTP 202) — poll
- *  `fetchPrecomputeStatus` for real progress. */
+/**
+ * Starts a real precompute run. Returns immediately (HTTP 202) — poll
+ * `fetchPrecomputeStatus` for real progress.
+ *
+ * `force` defaults to false: the backend checks whether a previously-
+ * computed result for this scenario is still current (Stage 1B's
+ * forecast hasn't changed) and reuses it in a few seconds instead of
+ * redoing the ~1-2 minute solver+GNN pipeline — see
+ * `stage2/routes.py::_run_precompute_job`'s own docstring. Pass
+ * `force: true` (the "Re-run simulation" button, once a result already
+ * exists) to always recompute.
+ */
 export function startPrecompute(
   siteId: string,
   scenario: SimulationScenario = 'real',
+  force = false,
 ): Promise<PrecomputeStatus> {
-  return getJson(stage2Url(`/api/simulation/precompute/${encodeURIComponent(siteId)}`, scenario), {
-    method: 'POST',
-  })
+  const url = new URL(stage2Url(`/api/simulation/precompute/${encodeURIComponent(siteId)}`, scenario))
+  if (force) url.searchParams.set('force', 'true')
+  return getJson(url.toString(), { method: 'POST' })
 }
 
 export function fetchPrecomputeStatus(

@@ -81,15 +81,22 @@ export function SimulationControls({
     queryClient.invalidateQueries({ queryKey: queryKeys.damageRanking(siteId) })
   }, [status?.state, siteId, scenario, queryClient])
 
+  const isReady = status?.state === 'done'
+
+  // First run (no result yet) never needs to force: there's nothing to
+  // reuse anyway, so the backend does the real work regardless. Once a
+  // result exists, "Re-run simulation" is an explicit request to redo
+  // it even if the underlying forecast hasn't changed -- everywhere else
+  // clicking between scenarios reuses the cached result in a few seconds
+  // rather than retraining (see startPrecompute's own docstring).
   const run = useMutation({
-    mutationFn: () => startPrecompute(siteId, scenario),
+    mutationFn: () => startPrecompute(siteId, scenario, isReady),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.precomputeStatus(siteId, scenario) })
     },
   })
 
   const isRunning = status?.state === 'running' || run.isPending
-  const isReady = status?.state === 'done'
 
   return (
     <PixelPanel
