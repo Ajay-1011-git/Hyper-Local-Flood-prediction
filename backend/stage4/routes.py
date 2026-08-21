@@ -147,11 +147,14 @@ def _mock_simulation_result(site_id: str) -> SimulationResult:
     )
 
 
-def _get_simulation_result(site_id: str) -> Tuple[SimulationResult, str]:
+def _get_simulation_result(site_id: str, scenario: str = "real") -> Tuple[SimulationResult, str]:
     if settings.stage2_simulation_result_base_url:
         url = f"{settings.stage2_simulation_result_base_url}/{site_id}"
         try:
-            resp = requests.get(url, timeout=15)
+            # Stage 2 holds a real-forecast and a hypothetical heavy-rain
+            # simulation per site; an alert must be built from the one the
+            # operator is actually looking at, never silently the other.
+            resp = requests.get(url, params={"scenario": scenario}, timeout=60)
             resp.raise_for_status()
             return SimulationResult.model_validate(resp.json()), "stage2_live"
         except Exception as exc:
@@ -184,11 +187,13 @@ def _mock_damage_ranking(site_id: str) -> List[DamageRankEntry]:
     ]
 
 
-def _get_damage_ranking(site_id: str) -> Tuple[List[DamageRankEntry], str]:
+def _get_damage_ranking(
+    site_id: str, scenario: str = "real"
+) -> Tuple[List[DamageRankEntry], str]:
     if settings.stage3_damage_ranking_base_url:
         url = f"{settings.stage3_damage_ranking_base_url}/{site_id}"
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, params={"scenario": scenario}, timeout=90)
             resp.raise_for_status()
             return [DamageRankEntry.model_validate(e) for e in resp.json()], "stage3_live"
         except Exception as exc:
@@ -292,9 +297,9 @@ async def get_mesh_nodes(site_id: str) -> SiteMeshNodesResponse:
 
 
 @app.get("/api/alert/{site_id}", response_model=Alert)
-async def get_alert(site_id: str, response: Response) -> Alert:
-    sim_result, sim_source = _get_simulation_result(site_id)
-    damage_ranking, ranking_source = _get_damage_ranking(site_id)
+async def get_alert(site_id: str, response: Response, scenario: str = "real") -> Alert:
+    sim_result, sim_source = _get_simulation_result(site_id, scenario)
+    damage_ranking, ranking_source = _get_damage_ranking(site_id, scenario)
 
     cache_key = f"alert:{site_id}:{sim_result.simulation_id}"
     redis = get_redis_client()
@@ -372,9 +377,9 @@ _ACTIVE_ALERT_KEY = "active_alert:{site_id}"
 
 
 @app.post("/api/alert/{site_id}/issue", response_model=Alert)
-async def issue_alert(site_id: str, response: Response) -> Alert:
+async def issue_alert(site_id: str, response: Response, scenario: str = "real") -> Alert:
     """Publish the current draft alert to the public Citizen View."""
-    alert = await get_alert(site_id, response)
+    alert = await get_alert(site_id, response, scenario)
     redis = get_redis_client()
     # No TTL: an issued alert stays issued until a person withdraws it or
     # its own `expiry_time` passes (checked on read below). Expiring it on

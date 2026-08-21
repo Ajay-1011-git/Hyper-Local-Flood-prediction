@@ -93,8 +93,19 @@ async def test_cache_hit_skips_recomputation_including_sarvam_calls():
 
 
 async def test_severity_urgency_certainty_trace_to_the_real_top_ranked_entry():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/api/alert/test_site_04")
+    # This test is ABOUT the mock-fixture path, so the live Stage 2/3 URLs
+    # are explicitly unset for it. Without this it depends on whether a
+    # real Stage 2 happens to be running on this machine: `.env` configures
+    # those URLs, so the route made a genuine network call, got a 404 for
+    # this synthetic site id, and fell back to the mock anyway -- passing
+    # for the wrong reason when no server was up, and failing outright
+    # when one was. A test's result must not depend on that.
+    with patch.object(settings, "stage2_simulation_result_base_url", None):
+        with patch.object(settings, "stage3_damage_ranking_base_url", None):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/api/alert/test_site_04")
 
     body = resp.json()
     # Mock damage ranking's top entry: vulnerability_score=0.40 -> Moderate
@@ -142,7 +153,12 @@ async def test_uses_live_stage2_and_stage3_sources_when_configured():
         def json(self):
             return self._payload
 
-    def _fake_get(url, timeout):
+    def _fake_get(url, timeout=None, params=None):
+        # `params` carries the real scenario Stage 4 now forwards to
+        # Stage 2/3, so an alert is always built from the simulation the
+        # operator is actually looking at. Asserted rather than ignored:
+        # dropping it would silently alert on the wrong scenario.
+        assert params == {"scenario": "real"}
         if "simulation" in url:
             return _FakeResponse(fake_sim.model_dump(mode="json"))
         return _FakeResponse([e.model_dump(mode="json") for e in fake_ranking])
