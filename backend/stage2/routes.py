@@ -44,11 +44,18 @@ orchestration is explicitly out of this task's scope (`routes.py` +
 `tests/test_routes.py` only). `set_site_state()` is the real, plain
 function such a job (or a test, or this session's own real VERIFY script)
 calls to populate a site's runtime state; the routes below only ever
-READ/update it, never fabricate it. A single-process in-memory dict is
-correct at this project's demo scale (single worker, single laptop, per
-TRD §3) — a genuinely multi-worker deployment would need shared state
-(e.g. Redis), flagged rather than silently assumed to scale, same as the
-`ConnectionManager` note above.
+READ/update it, never fabricate it.
+
+UPDATE: the in-memory dict is now MIRRORED TO REDIS (`site_state_store`).
+The original note here said a single-process dict was "correct at this
+project's demo scale", which turned out to be wrong in one specific,
+observed way: restarting this process silently discarded every computed
+simulation, and the dashboard reverted to "no live simulation for this
+site yet" — throwing away 1-6 minutes of real physics per scenario with
+no indication why. Reads now go through `get_site_state()`, which
+restores from Redis on a miss. A genuinely multi-worker deployment would
+still need more than this (the `ConnectionManager` above is still
+in-process only), which remains flagged rather than assumed solved.
 """
 
 from __future__ import annotations
@@ -64,6 +71,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from stage2.assimilation.errors import SensorAtWallNodeError
 from stage2.assimilation.ghost_cell_update import assimilate_reading
 from stage2.config import get_settings
+from stage2 import site_state_store
 from stage2.precompute import SCENARIOS, PrecomputeUnavailableError, run_precompute_for_site
 from stage2.shared.contracts import ComputationalMeshNode, MeshEdge, SimulationResult
 from backend.shared.contracts import SensorReading  # noqa: E402  (see shared/contracts.py's sys.path note)
@@ -129,6 +137,28 @@ def set_site_state(
     )
 
 
+async def get_site_state(site_id: str, scenario: str = "real") -> Optional[SiteRuntimeState]:
+    """This site/scenario's state, restoring it from Redis on a miss.
+
+    A restart empties `_site_state` but not Redis, so a previously-computed
+    simulation survives (see `site_state_store`'s docstring for the real
+    failure this fixes). The restored entry is put back in the in-process
+    dict, so this only pays the deserialisation cost once.
+    """
+    state = _site_state.get((site_id, scenario))
+    if state is not None:
+        return state
+
+    restored = await site_state_store.load(site_id, scenario)
+    if restored is None:
+        return None
+
+    nodes, edges, result, provenance = restored
+    logger.info("Restored persisted simulation for %s/%s", site_id, scenario)
+    set_site_state(site_id, nodes, edges, result, scenario=scenario, provenance=provenance)
+    return _site_state[(site_id, scenario)]
+
+
 @dataclass
 class PrecomputeJob:
     """Live status of one background precompute run."""
@@ -188,7 +218,7 @@ async def get_simulation_site(site_id: str, scenario: str = "real") -> Simulatio
     404s if nothing has been precomputed yet for this site, rather than
     blocking the request on a real ensemble run.
     """
-    state = _site_state.get((site_id, scenario))
+    state = await get_site_state(site_id, scenario)
     if state is None:
         raise HTTPException(
             status_code=404,
@@ -207,7 +237,7 @@ async def get_simulation_provenance(site_id: str, scenario: str = "real") -> dic
     shared verbatim with Stage 3/4 and must not gain Stage-2-private
     fields (this stage's own anti-drift rule 8).
     """
-    state = _site_state.get((site_id, scenario))
+    state = await get_site_state(site_id, scenario)
     if state is None:
         raise HTTPException(
             status_code=404,
@@ -257,6 +287,8 @@ async def _run_precompute_job(site_id: str, scenario: str, max_members: int) -> 
         return
 
     set_site_state(site_id, nodes, edges, result, scenario=scenario, provenance=provenance)
+    # Mirror to Redis so this expensive result survives a restart.
+    await site_state_store.save(site_id, scenario, nodes, edges, result, provenance)
     _precompute_jobs[key] = PrecomputeJob(
         state="done", message="Simulation ready", progress=1.0
     )
@@ -318,7 +350,9 @@ async def get_simulation_precompute_status(site_id: str, scenario: str = "real")
     """Real progress of a precompute run (see the POST above)."""
     job = _precompute_jobs.get((site_id, scenario))
     if job is None:
-        has_result = (site_id, scenario) in _site_state
+        # Checked through the accessor, so a result persisted before a
+        # restart reports "done" rather than "never started".
+        has_result = await get_site_state(site_id, scenario) is not None
         return {
             "state": "done" if has_result else "idle",
             "message": "Simulation ready" if has_result else "Not started",
@@ -348,7 +382,7 @@ async def post_simulation_assimilate(reading: SensorReading) -> SimulationResult
     # A live sensor reading is real-world observation, so it can only
     # correct the simulation of the real world -- never the hypothetical
     # heavy-rain scenario, which is not claiming to be happening.
-    state = _site_state.get((reading.site_id, "real"))
+    state = await get_site_state(reading.site_id, "real")
     if state is None:
         raise HTTPException(
             status_code=404,
@@ -440,7 +474,7 @@ async def get_sensor_location(site_id: str) -> dict:
             ),
         }
 
-    state = _site_state.get((site_id, "real"))
+    state = await get_site_state(site_id, "real")
     nearest_node_id = None
     if state is not None and state.nodes:
         nearest = min(
